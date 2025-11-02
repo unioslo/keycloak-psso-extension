@@ -17,11 +17,13 @@
 */
 package no.uio.keycloak.psso;
 
+import jakarta.persistence.EntityManager;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
 import org.jboss.logging.Logger;
 import org.json.JSONObject;
 import org.keycloak.component.ComponentModel;
+import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -37,6 +39,7 @@ import org.keycloak.sessions.RootAuthenticationSessionModel;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.security.interfaces.RSAPrivateKey;
 import java.util.Base64;
 import java.util.Collections;
@@ -57,7 +60,7 @@ public class PSSOResource {
     @Path("/nonce")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response getStatus(
+    public Response getNonce(
             @FormParam("grant_type") @DefaultValue("") String grantType,
             @FormParam("client-request-id") @DefaultValue("") String clientRequestId) {
         if (clientRequestId == null || clientRequestId.isEmpty() || !grantType.equals("srv_challenge")) {
@@ -72,4 +75,43 @@ public class PSSOResource {
         String nonce = nonceService.createNonce(clientRequestId);
         return Response.ok(Map.of("nonce", nonce)).build();
     }
+
+    @POST
+    @Path("/enroll")
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response enroll(
+            @FormParam("DeviceUUID") @DefaultValue("") String deviceUUID,
+            @FormParam("DeviceSigningKey") @DefaultValue("") String deviceSigningKey,
+            @FormParam("DeviceEncryptionKey") @DefaultValue("") String deviceEncryptionKey,
+            @FormParam("SignKeyID") @DefaultValue("") String signKeyId,
+            @FormParam("EncKeyID") @DefaultValue("") String encKeyId,
+            @FormParam("client-request-id") @DefaultValue("") String clientRequestId) {
+
+        SecureRandom random = new SecureRandom();
+        byte[] keyExchangeKeyBytes = new byte[32];
+        random.nextBytes(keyExchangeKeyBytes);
+
+        String keyExchangeKey = Base64.getEncoder().encodeToString(keyExchangeKeyBytes);
+        JpaConnectionProvider jpa = session.getProvider(JpaConnectionProvider.class);
+        EntityManager em = jpa.getEntityManager();
+
+        // TODO: check if device already exists
+        // TODO: authenticate the device to check if it exists on the MDM or is legit
+        // For example: check with the Apple Root CA
+
+        Device device = new Device();
+        device.setDeviceUUID(deviceUUID);
+        device.setSigningKey(deviceSigningKey);
+        device.setEncryptionKey(deviceEncryptionKey);
+        device.setKeyExchangeKey(keyExchangeKey);
+        device.setCategory("psso");
+        device.setCreationTime(System.currentTimeMillis());
+        em.persist(device);
+
+
+        return Response.ok(Map.of("status", "OK")).build();
+    }
+
+
 }
