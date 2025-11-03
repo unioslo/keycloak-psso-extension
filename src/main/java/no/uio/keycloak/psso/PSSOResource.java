@@ -105,7 +105,8 @@ public class PSSOResource {
         device.setSigningKey(deviceSigningKey);
         device.setEncryptionKey(deviceEncryptionKey);
         device.setKeyExchangeKey(keyExchangeKey);
-        device.setCategory("psso");
+        device.setRealmId(session.getContext().getRealm().getId());
+        device.setCategory("psso-mac");
         device.setCreationTime(System.currentTimeMillis());
         em.persist(device);
 
