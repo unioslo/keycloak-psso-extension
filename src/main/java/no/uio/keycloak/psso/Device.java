@@ -30,6 +30,7 @@ import java.util.Objects;
 public class Device {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.AUTO) // or AUTO
     @Column(name = "id", length = 36, nullable = false, updatable = false)
     private String id;
 

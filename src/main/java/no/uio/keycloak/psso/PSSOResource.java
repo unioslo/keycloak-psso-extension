@@ -61,8 +61,8 @@ public class PSSOResource {
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Produces(MediaType.APPLICATION_JSON)
     public Response getNonce(
-            @FormParam("grant_type") @DefaultValue("") String grantType,
-            @FormParam("client-request-id") @DefaultValue("") String clientRequestId) {
+            @HeaderParam("grant_type") @DefaultValue("") String grantType,
+            @HeaderParam("client-request-id") @DefaultValue("") String clientRequestId) {
         if (clientRequestId == null || clientRequestId.isEmpty() || !grantType.equals("srv_challenge")) {
            String error = "Missing grant type and/or client request id";
 
@@ -108,6 +108,7 @@ public class PSSOResource {
         device.setRealmId(session.getContext().getRealm().getId());
         device.setCategory("psso-mac");
         device.setCreationTime(System.currentTimeMillis());
+        logger.info("Device to be enrolled: " + device.toString());
         em.persist(device);
 
 
