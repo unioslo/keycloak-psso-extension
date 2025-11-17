@@ -24,21 +24,31 @@ import java.util.Objects;
 @Entity
 @Table(name = "psso_device")
 @NamedQueries({
-        @NamedQuery(name = "Device.findByUUID",
-                query = "SELECT d FROM Device d WHERE d.deviceUUID = :uuid")
+        @NamedQuery(name = "Device.findByUDID",
+                query = "SELECT d FROM Device d WHERE d.deviceUDID = :udid"),
+        @NamedQuery(name = "Device.findBySerialNumber",
+                query = "SELECT d FROM Device d WHERE d.serialNumber = :serialNumber"),
+        @NamedQuery(name = "Device.findBySignKeyId",
+                query = "SELECT d FROM Device d WHERE d.signingKeyId = :signingKeyId"),
+        @NamedQuery(name = "Device.findByEncKeyId",
+                query = "SELECT d FROM Device d WHERE d.encryptionKeyId = :encryptionKeyId")
+
 })
 public class Device {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO) // or AUTO
+    @GeneratedValue(strategy = GenerationType.AUTO)
     @Column(name = "id", length = 36, nullable = false, updatable = false)
     private String id;
 
     @Column(name = "realm_id", length = 36, nullable = false)
     private String realmId;
 
-    @Column(name = "device_uuid", length = 128, nullable = false, unique = true)
-    private String deviceUUID;
+    @Column(name = "device_udid", length = 128, nullable = false, unique = true)
+    private String deviceUDID;
+
+    @Column(name = "serial_number", length = 128, unique = true)
+    private String serialNumber; // <-- new column
 
     @Column(name = "category", length = 64, nullable = false)
     private String category;
@@ -46,10 +56,21 @@ public class Device {
     @Lob
     @Column(name = "signing_key", nullable = false)
     private String signingKey;
+    @Lob
+    @Column(name = "signing_key_id", nullable = false)
+    private String signingKeyId;
 
     @Lob
     @Column(name = "encryption_key", nullable = false)
     private String encryptionKey;
+
+    @Lob
+    @Column(name = "encryption_key_id", nullable = false)
+    private String encryptionKeyId;
+
+    @Lob
+    @Column(name = "registered_by", nullable = false)
+    private String registeredBy;
 
     @Lob
     @Column(name = "key_exchange_key", nullable = false)
@@ -60,15 +81,19 @@ public class Device {
 
     public Device() {}
 
-    public Device(String id, String realmId, String deviceUUID,
-                        String category, String signingKey, String encryptionKey,
-                        String keyExchangeKey, long creationTime) {
+    public Device(String id, String realmId, String deviceUDID, String serialNumber,
+                  String category, String signingKey, String signingKeyId,  String encryptionKey,  String encryptionKeyId,
+                  String keyExchangeKey, String registeredBy, long creationTime) {
         this.id = id;
         this.realmId = realmId;
-        this.deviceUUID = deviceUUID;
+        this.deviceUDID = deviceUDID;
+        this.serialNumber = serialNumber;
         this.category = category;
         this.signingKey = signingKey;
         this.encryptionKey = encryptionKey;
+        this.encryptionKeyId = encryptionKeyId;
+        this.signingKeyId = signingKeyId;
+        this.registeredBy = registeredBy;
         this.keyExchangeKey = keyExchangeKey;
         this.creationTime = creationTime;
     }
@@ -80,8 +105,11 @@ public class Device {
     public String getRealmId() { return realmId; }
     public void setRealmId(String realmId) { this.realmId = realmId; }
 
-    public String getDeviceUUID() { return deviceUUID; }
-    public void setDeviceUUID(String deviceUUID) { this.deviceUUID = deviceUUID; }
+    public String getDeviceUDID() { return deviceUDID; }
+    public void setDeviceUDID(String deviceUDID) { this.deviceUDID = deviceUDID; }
+
+    public String getSerialNumber() { return serialNumber; }
+    public void setSerialNumber(String serialNumber) { this.serialNumber = serialNumber; }
 
     public String getCategory() { return category; }
     public void setCategory(String category) { this.category = category; }
@@ -89,8 +117,18 @@ public class Device {
     public String getSigningKey() { return signingKey; }
     public void setSigningKey(String signingKey) { this.signingKey = signingKey; }
 
+    public String getSigningKeyId() { return signingKeyId; }
+    public void setSigningKeyId(String signingKeyId) { this.signingKeyId = signingKeyId; }
+
     public String getEncryptionKey() { return encryptionKey; }
     public void setEncryptionKey(String encryptionKey) { this.encryptionKey = encryptionKey; }
+
+    public String getEncryptionKeyId() { return encryptionKeyId; }
+    public void setEncryptionKeyId(String encryptionKeyId) { this.encryptionKeyId = encryptionKeyId; }
+
+
+    public String getRegisteredBy() { return registeredBy; }
+    public void setRegisteredBy(String registeredBy) { this.registeredBy = registeredBy; }
 
     public String getKeyExchangeKey() { return keyExchangeKey; }
     public void setKeyExchangeKey(String keyExchangeKey) { this.keyExchangeKey = keyExchangeKey; }
@@ -103,19 +141,21 @@ public class Device {
         if (this == o) return true;
         if (!(o instanceof Device)) return false;
         Device that = (Device) o;
-        return Objects.equals(deviceUUID, that.deviceUUID);
+        return Objects.equals(deviceUDID, that.deviceUDID);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(deviceUUID);
+        return Objects.hash(deviceUDID);
     }
 
     @Override
     public String toString() {
         return "DeviceEntity{" +
-                "deviceUUID='" + deviceUUID + '\'' +
+                "deviceUUID='" + deviceUDID + '\'' +
+                ", serialNumber='" + serialNumber + '\'' +
                 ", category='" + category + '\'' +
+                ", registeredBy='" + registeredBy + '\'' +
                 ", creationTime=" + creationTime +
                 '}';
     }

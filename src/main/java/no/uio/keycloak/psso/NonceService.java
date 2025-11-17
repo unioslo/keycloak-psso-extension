@@ -6,7 +6,7 @@
  # as published by the Free Software Foundation;
  # either version 2 of the License, or (at your option) any later version.
  #
- # This extension  is distributed in the hope that it will be useful, but
+ # This extension is distributed in the hope that it will be useful, but
  # WITHOUT ANY WARRANTY; without even the implied warranty of
  # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  # General Public License for more details.
@@ -17,6 +17,7 @@
 */
 package no.uio.keycloak.psso;
 
+import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
 import org.infinispan.Cache;
@@ -26,6 +27,7 @@ public class NonceService {
 
     private static final long NONCE_TTL_MS = 60_000; // 1 minute
     private final Cache<String, NonceEntry> nonceCache;
+    private static final Logger logger = Logger.getLogger(NonceService.class);
 
     public NonceService(KeycloakSession session) {
         var infinispan = session.getProvider(InfinispanConnectionProvider.class);
@@ -42,10 +44,15 @@ public class NonceService {
 
     public boolean validateNonce(String nonce, String clientRequestId) {
         NonceEntry entry = nonceCache.remove(nonce); // consume once
+        logger.debug("Nonce to validate: " + nonce + ", client-request-id: " + clientRequestId + ", entry: " + entry);
 
-        if (entry == null) return false;
-        if (System.currentTimeMillis() > entry.expiresAt) return false;
+        logger.debug("Nonce entry expiresAt: " + entry.expiresAt);
+        logger.debug("Nonce entry now: " + System.currentTimeMillis());
 
+        if (System.currentTimeMillis() > entry.expiresAt) {
+            logger.debug("Nonce expired");
+            return false;
+        }
         // Verify it matches the same client-request-id
         return entry.clientRequestId.equals(clientRequestId);
     }

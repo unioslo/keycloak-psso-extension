@@ -74,14 +74,30 @@
        <dependency>
             <groupId>org.json</groupId>
             <artifactId>org.json</artifactId>
-            <version>LATEST</version>
+            <version>chargebee-1.0</version>
        </dependency>
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
-            <version>3.12.0</version>
+            <version>3.17.0</version>
        </dependency>
-    </dependencies>
+      <dependency>
+          <groupId>org.bouncycastle</groupId>
+          <artifactId>bcprov-jdk18on</artifactId>
+          <version>1.82</version>
+      </dependency>
+      <dependency>
+          <groupId>com.nimbusds</groupId>
+          <artifactId>nimbus-jose-jwt</artifactId>
+          <version>10.6</version>  <!-- same as Keycloak's -->
+      </dependency>
+      <dependency>
+          <groupId>org.bitbucket.b_c</groupId>
+          <artifactId>jose4j</artifactId>
+          <version>0.9.6</version> <!-- or latest stable -->
+      </dependency>
+
+  </dependencies>
 
     <build>
         <finalName>keycloak-psso</finalName>
@@ -101,6 +117,8 @@
                                       <includes>
                                          <include>com.auth0:java-jwt</include>
                                          <include>org.json:org.json</include>
+                                          <include>com.nimbusds:nimbus-jose-jwt</include>
+                                          <include>org.bitbucket.b_c:jose4j</include>
                                       </includes>
                                    </artifactSet>
                                 </configuration>

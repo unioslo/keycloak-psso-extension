@@ -39,9 +39,13 @@
             <column name="realm_id"/>
         </createIndex>
 
-        <createIndex indexName="idx_psso_device_uuid"
-                     tableName="psso_device">
-            <column name="device_uuid"/>
-        </createIndex>
+            <createIndex indexName="idx_psso_device_uuid"
+                         tableName="psso_device">
+                <column name="device_uuid"/>
+            </createIndex>
     </changeSet>
+    <include file="/META-INF/changelog/1-add-serial-number-changelog.xml"/>
+    <include file="/META-INF/changelog/2-rename-column-uuid-to-uid.xml"/>
+    <include file="/META-INF/changelog/3-add-registered-by-column-changelog.xml"/>
+    <include file="/META-INF/changelog/4-add-key-ids-changelog.xml"/>
 </databaseChangeLog>
