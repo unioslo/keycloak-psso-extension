@@ -1,3 +1,21 @@
+/* Copyright 2025 University of Oslo, Norway
+ # This file is part of Cerebrum.
+ #
+ # This extension for Keycloak is free software; you can redistribute
+ # it and/or modify it under the terms of the GNU General Public License
+ # as published by the Free Software Foundation;
+ # either version 2 of the License, or (at your option) any later version.
+ #
+ # This extension is distributed in the hope that it will be useful, but
+ # WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ # General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this extension; if not, write to the Free Software Foundation,
+ # Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
+*/
+
 package no.uio.keycloak.psso.token;
 
 import jakarta.ws.rs.core.Response;
@@ -161,15 +179,6 @@ public class TokenIssuer {
             token.setOtherClaims("iss", newIssuer);
         }
 
-
-
-
-
-// If you want an offline token (refresh token that persists), enable it when building:
-// builder.offlineToken(true);
-
-// 6) Build the AccessTokenResponse (this produces an AccessTokenResponse object
-// which may contain *token objects* but the encoded strings can be null at this point)
         AccessTokenResponse response = builder.build();
 
 
@@ -194,16 +203,7 @@ public class TokenIssuer {
         String refreshToken = response.getRefreshToken(); // refresh_token (encoded JWT or opaque)
 
 
-// Logging so you can see concrete output
-        logger.infof("Response object: %s", response);
-        logger.infof("Token type: %s", response.getTokenType());
-        logger.infof("Issued tokens for user %s (access %b id %b refresh %b)",
-                user.getUsername(),
-                accessToken != null,
-                idToken != null,
-                refreshToken != null);
-        logger.info("ID: " + idToken);
-        logger.info("Refresh token: " + refreshToken);
+
         return new IssuedTokens(accessToken, idToken, refreshToken);
 
     }
@@ -213,15 +213,6 @@ public class TokenIssuer {
                                                 UserSessionModel userSession) {
 
         final long now = Time.currentTime();
-        logger.info("now=" + now);
-        logger.info("started=" + userSession.getStarted());
-        logger.info("lastRefresh=" + userSession.getLastSessionRefresh());
-        logger.info("realmMax=" + realm.getSsoSessionMaxLifespan());
-        logger.info("realmIdle=" + realm.getSsoSessionIdleTimeout());
-        logger.info("realmMaxRM=" + realm.getSsoSessionMaxLifespanRememberMe());
-        logger.info("realmIdleRM=" + realm.getSsoSessionIdleTimeoutRememberMe());
-        logger.info("clientMax=" + client.getAttribute("sso.session.max.lifespan"));
-        logger.info("clientIdle=" + client.getAttribute("sso.session.idle.timeout"));
 
         // ---- Realm defaults ----
         long maxLifespan = Math.max(realm.getSsoSessionMaxLifespanRememberMe(), realm.getSsoSessionMaxLifespan());

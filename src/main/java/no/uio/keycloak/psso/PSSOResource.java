@@ -265,7 +265,7 @@ public class PSSOResource {
         List<CredentialModel> credentials = user.credentialManager()
                 .getStoredCredentialsByTypeStream(UserPSSOCredentialModel.TYPE)
                 .toList();
-        logger.info("Found "+credentials.size()+" existing credentials for user "+user.getUsername());
+        logger.debug("Found "+credentials.size()+" existing credentials for user "+user.getUsername());
 
         for (CredentialModel existingCred : credentials) {
             String id = existingCred.getId();
@@ -278,7 +278,7 @@ public class PSSOResource {
 
         UserPSSOCredentialModel model = UserPSSOCredentialModel.createCredential(username, userKey, userKeyId, deviceUDID, serial );
         user.credentialManager().createStoredCredential(model);
-
+        logger.info ("Platform SSO: User: "+username+ " successfully registered for device: "+serial);
         return Response.ok(Map.of("status", "OK")).build();
 
     }
@@ -295,21 +295,14 @@ public class PSSOResource {
                           @Context HttpHeaders headers) {
         // 1) normalize param: assertion or request
         String jwsCompact = assertion != null ? assertion : requestParam;
-        logger.info("JWS compact assertion: " + jwsCompact);
-        logger.info("JWS compact request: " + jwsCompact);
-        logger.info("platform_sso_version: " + version);
-        logger.info("platform_sso_grant_type: " + grantType);
-        logger.info("params: " + requestParam);
 
         String header = session.getContext().getRequestHeaders().getHeaderString("client-request-id");
-        logger.info("client-request-id: " + header);
         JWSDecoder jwsDecoder = new JWSDecoder(session);
-        JWSDecoder.debugPrint(jwsCompact);
         Map<String,Object> claims;
         try {
             claims = jwsDecoder.parseAndVerify(jwsCompact);
             for(Map.Entry<String, Object> claim : claims.entrySet()) {
-                logger.info(claim.getKey() + ": " + claim.getValue());
+                logger.debug(claim.getKey() + ": " + claim.getValue());
             }
 
         } catch (Exception e) {
@@ -339,7 +332,7 @@ public class PSSOResource {
         String realmName = realm.getName();
         String issuer = "psso";
         String audience = baseUrl + "/realms/" + realmName + "/" + issuer+"/token";
-        logger.info("audience: " + audience);
+        logger.debug("audience: " + audience);
         try {
             AssertionValidator validator = new AssertionValidator(session);
             device = validator.validate(claims, device, audience,issuer, clientRequestId);
@@ -368,11 +361,11 @@ public class PSSOResource {
         TokenIssuer tokenIssuer = new TokenIssuer(session);
         EventBuilder event = new EventBuilder(realm, session, session.getContext().getConnection());
         Set<String> clientScopeIds = client.getClientScopes(true).keySet();
-        logger.info("Client scope IDs: " + clientScopeIds);
+        logger.debug("Client scope IDs: " + clientScopeIds);
         IssuedTokens tokens = tokenIssuer.issueSignedTokens(realm,user, client, "openid offline_access urn:apple:platformsso", event, nonce);
 
         for (String claim : claims.keySet()) {
-            logger.info("Request claim: "+ claim +": " + claims.get(claim));
+            logger.debug("Request claim: "+ claim +": " + claims.get(claim));
         }
 
         Map<String, Object> jweCrypto = (Map<String, Object>) claims.get("jwe_crypto");
@@ -383,11 +376,6 @@ public class PSSOResource {
         byte[] apvBytes = apv != null ? Base64URL.from(apv).decode() : null;
         ECKey deviceKeyEC;
         String jwe;
-        logger.info("APV (base64url): " + (apvBytes == null ? "null" : Base64URL.encode(apvBytes).toString()));
-
-
-
-
         ECPublicKey deviceKeyECPublicKey;
         try {
           deviceKeyECPublicKey = jwsDecoder.convertX963ToECPublicKey(device.getEncryptionKey());
@@ -407,10 +395,7 @@ public class PSSOResource {
                     "platformsso-login-response+jwt"
             );
             JWEObject parsed = JWEObject.parse(jwe);
-            logger.info("Server JWE header: " + parsed.getHeader().toJSONObject().toString());
-            logger.info("Device Encryption key: "+deviceKeyECPublicKey);
-            logger.info("Device key id: "+device.getEncryptionKeyId());
-
+            logger.info("Platform SSO: User: "+sub+" on device: "+device.getSerialNumber()+" got an SSO token.");
             return Response.ok()
                     .type("application/platformsso-login-response+jwt")
                     .entity(jwe)

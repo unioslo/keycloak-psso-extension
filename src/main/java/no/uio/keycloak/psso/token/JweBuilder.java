@@ -1,3 +1,21 @@
+/* Copyright 2025 University of Oslo, Norway
+ # This file is part of Cerebrum.
+ #
+ # This extension for Keycloak is free software; you can redistribute
+ # it and/or modify it under the terms of the GNU General Public License
+ # as published by the Free Software Foundation;
+ # either version 2 of the License, or (at your option) any later version.
+ #
+ # This extension is distributed in the hope that it will be useful, but
+ # WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ # General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this extension; if not, write to the Free Software Foundation,
+ # Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
+*/
+
 package no.uio.keycloak.psso.token;
 
 import com.nimbusds.jose.*;
@@ -92,9 +110,6 @@ public class JweBuilder {
                 .issueTime(new Date()) // issued-at timestamp (optional)
                 .generate();
 
-
-
-
         // Build X9.63 uncompressed EPK bytes: 0x04 || X || Y
         byte[] x = epk.getX().decode(); // 32 bytes for P-256
         byte[] y = epk.getY().decode(); // 32 bytes
@@ -113,38 +128,20 @@ public class JweBuilder {
         byte[] apuBytes = apuBb.array();
 
         headerBuilder.keyID(keyId);
-       headerBuilder.ephemeralPublicKey(epk.toPublicJWK());
-      headerBuilder.agreementPartyUInfo(Base64URL.encode(apuBytes));
-
-// Debug logs — helpful while testing
-        logger.info("KeyID: " + keyId);
-        logger.info("EPK x (b64url) = " + epk.getX().toString());
-
-        logger.info("EPK y (b64url) = " + epk.getY().toString());
-        logger.info("Epk: "+ epk);
-
-        logger.info("epkX963 length = " + x963.length + " (should be 65 for uncompressed)");
-        logger.info("APU length = " + apuBytes.length + " (should be 78)");
-        logger.info("APU base64url = " + Base64URL.encode(apuBytes).toString());
-
+        headerBuilder.ephemeralPublicKey(epk.toPublicJWK());
+        headerBuilder.agreementPartyUInfo(Base64URL.encode(apuBytes));
         JWEHeader header = headerBuilder.build();
-        logger.info("The header: "+header);
-
         JWEObject jweObject = new JWEObject(header, payload);
-
         Map<String,Object> headerMap = header.toJSONObject();
-
 // derive CEK with your code (you already have deriveCek / generateCEK)
         SecretKey cek = generateCEK(epk, recipientEcJwk.toECPublicKey(), apuBytes, apv);
 // ensure cek is AES 32 bytes
-
         String compact="";
         try {
             compact = buildCompactJweWithCek(headerMap, cek, payload.toString());
         } catch (Exception e) {
             logger.error("Error building compact JWE", e);
         }
-
         return compact;
     }
 
