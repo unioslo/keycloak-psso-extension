@@ -25,6 +25,7 @@ import org.keycloak.events.EventBuilder;
 import org.keycloak.models.*;
 import org.keycloak.protocol.oidc.OIDCLoginProtocol;
 import org.keycloak.protocol.oidc.TokenManager;
+import org.keycloak.representations.AccessToken;
 import org.keycloak.representations.AccessTokenResponse;
 import org.keycloak.representations.IDToken;
 import org.keycloak.representations.RefreshToken;
@@ -42,6 +43,7 @@ public class TokenIssuer {
     private final KeycloakSession session;
     public  long expiresIn = 0;
     public long refreshExpiresIn = 0;
+    RefreshToken refreshToken = null;
     public TokenIssuer(KeycloakSession session) {
         this.session = session;
     }
@@ -61,33 +63,56 @@ public class TokenIssuer {
                                           ClientModel client,
                                           String scope,
                                           EventBuilder event,
-                                          String nonce) {
+                                          String nonce,
+                                          boolean isRefresh
+                                            ) {
 
         // 1) Create a transient authentication session (used by some flows)
         RootAuthenticationSessionModel root = session.authenticationSessions().createRootAuthenticationSession(realm);
         AuthenticationSessionModel authSession = root.createAuthenticationSession(client);
         authSession.setAuthenticatedUser(user);
         authSession.setProtocol("openid-connect");
+
+
         if (scope != null && !scope.isBlank()) {
             authSession.setClientNote(OIDCLoginProtocol.SCOPE_PARAM, scope);
         }
 
-        // 2) Create a persistent user session using the non-deprecated signature.
-        UserSessionModel userSession = session.sessions().createUserSession(
-                null, /* id - let Keycloak generate */
-                realm,
-                user,
-                user.getUsername(),
-                session.getContext().getConnection().getRemoteAddr(),
-                "openid-connect",
-                true, /* rememberMe */
-                null,  /* brokerSessionId */
-                null,  /* brokerUserId */
-                UserSessionModel.SessionPersistenceState.PERSISTENT
-        );
+        UserSessionModel userSession;
+        AuthenticatedClientSessionModel clientSession;
+
+        if (isRefresh && refreshToken.getType().equalsIgnoreCase("refresh")) {
+            String sid = this.refreshToken.getSessionId();
+            UserSessionModel existingUserSession = session.sessions().getUserSession(realm, sid);
+
+            if (existingUserSession == null) {
+                throw new RuntimeException("User session not found for sid=" + sid);
+            }
+
+            clientSession = existingUserSession.getAuthenticatedClientSessionByClient(client.getId());
+            if (clientSession == null) {
+                throw new RuntimeException("Client session not found in existing session.");
+            }
+
+            userSession = existingUserSession;
+
+        }else {
+            userSession = session.sessions().createUserSession(
+                    null, /* id - let Keycloak generate */
+                    realm,
+                    user,
+                    user.getUsername(),
+                    session.getContext().getConnection().getRemoteAddr(),
+                    "openid-connect",
+                    true, /* rememberMe */
+                    null,  /* brokerSessionId */
+                    null,  /* brokerUserId */
+                    UserSessionModel.SessionPersistenceState.PERSISTENT);
+                    clientSession = session.sessions().createClientSession(realm, client, userSession);
+
+        }
 
         // 3) Create an authenticated client session attached to the user session
-        AuthenticatedClientSessionModel clientSession = session.sessions().createClientSession(realm, client, userSession);
 
         // --- Begin: ensure minimum required clientSession/authSession state ----------------
 
@@ -170,6 +195,16 @@ public class TokenIssuer {
         //token.setOtherClaims("nonce", nonce);
         token.setNonce(nonce);
         token.setSessionId(userSession.getId());
+        RefreshToken refreshTokenObject = builder.getRefreshToken();
+        refreshTokenObject.setSubject(user.getUsername());
+        refreshTokenObject.setPreferredUsername(user.getUsername());
+        // Not necessary
+        // Keycloak already sets sid for Refresh tokens
+        // and don't do it when the refresh token is offline
+       // refreshTokenObject.setSessionId(userSession.getId());
+        //refreshTokenObject.setPreferredUsername(user.getUsername());
+       // refreshTokenObject.setOtherClaims("tsid", clientSession.getId());
+
         String issuer = token.getIssuer();
         if (issuer == null) {
             logger.warn("Issuer had to be generated. Check if your hostname is right.");
@@ -177,6 +212,9 @@ public class TokenIssuer {
             String realmName = session.getContext().getRealm().getName();
             String newIssuer = baseUrl + "/realms/" + realmName;
             token.setOtherClaims("iss", newIssuer);
+            if (refreshTokenObject.getIssuer() ==  null) {
+                refreshTokenObject.setOtherClaims("iss", newIssuer);
+            }
         }
 
         AccessTokenResponse response = builder.build();
@@ -192,19 +230,13 @@ public class TokenIssuer {
         this.refreshExpiresIn = exp;
         this.expiresIn = realm.getAccessTokenLifespan();
 
-// 6b) **Important:** transform/encode the AccessTokenResponse into actual token strings
-// and attach it to the user/session context. This populates the encoded token strings
-// (access_token, id_token, refresh_token) inside the response object.
         tm.transformAccessTokenResponse(session, response, userSession, clientCtx);
 
 // 7) Pull signed token strings directly
         String accessToken = response.getToken();        // access_token (encoded JWT)
         String idToken = response.getIdToken();         // id_token (encoded JWT)
-        String refreshToken = response.getRefreshToken(); // refresh_token (encoded JWT or opaque)
-
-
-
-        return new IssuedTokens(accessToken, idToken, refreshToken);
+        String refreshTokenString = response.getRefreshToken(); // refresh_token (encoded JWT or opaque)
+        return new IssuedTokens(accessToken, idToken, refreshTokenString);
 
     }
 
@@ -219,8 +251,8 @@ public class TokenIssuer {
 
         long idleTimeout = Math.max(realm.getSsoSessionIdleTimeout(), realm.getSsoSessionIdleTimeoutRememberMe());
 
-        // ---- Client overrides ----
-        String clientMax = client.getAttribute("sso.session.max.lifespan");
+
+        String clientMax = client.getAttribute("client.session.max.lifespan");
         if (clientMax != null && !clientMax.isEmpty()) {
             try {
                 long v = Long.parseLong(clientMax);
@@ -228,7 +260,7 @@ public class TokenIssuer {
             } catch (NumberFormatException ignored) {}
         }
 
-        String clientIdle = client.getAttribute("sso.session.idle.timeout");
+        String clientIdle = client.getAttribute("client.session.idle.timeout");
         if (clientIdle != null && !clientIdle.isEmpty()) {
             try {
                 long v = Long.parseLong(clientIdle);
@@ -244,5 +276,15 @@ public class TokenIssuer {
 
         return finalExp;
     }
+
+    public void setRefreshToken(String refreshTokenString) {
+        try {
+            this.refreshToken = session.tokens().decode(refreshTokenString, RefreshToken.class);
+        } catch (Exception e) {
+            throw new RuntimeException("Invalid refresh token passed to TokenIssuer.setRefreshToken", e);
+        }
+    }
+
+
 
 }

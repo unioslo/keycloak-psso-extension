@@ -141,7 +141,7 @@ public class UserPSSOCredentialProvider implements CredentialProvider<UserPSSOCr
             userPSSOCredentialModel.setCreatedDate(model.getCreatedDate());
         }
 
-        logger.infof("CredentialModel ID: %s, Label: %s, Data: %s, Created: %s",
+        logger.debugf("CredentialModel ID: %s, Label: %s, Data: %s, Created: %s",
                 userPSSOCredentialModel.getId(),
                 userPSSOCredentialModel.getUserLabel(),
                 userPSSOCredentialModel.getCredentialData(),

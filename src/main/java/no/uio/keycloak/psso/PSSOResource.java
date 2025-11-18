@@ -45,7 +45,9 @@ import org.infinispan.Cache;
 
 
 import org.keycloak.models.UserModel;
+import org.keycloak.protocol.oidc.TokenManager;
 import org.keycloak.representations.AccessToken;
+import org.keycloak.representations.RefreshToken;
 import org.keycloak.services.resources.LoginActionsService;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.sessions.AuthenticationSessionProvider;
@@ -135,9 +137,10 @@ public class PSSOResource {
         String accessToken = enrollmentRequest.accessToken;
         AccessToken token;
         try {
-            token = session.tokens().decode(accessToken, AccessToken.class);
+            token = new AccessTokenValidator(session)
+                    .validate(accessToken, "psso");   // expectedClient may be null if you don’t need it
         }catch (Exception e) {
-            logger.error("Token verification failed: " + e.getMessage()+". Aborting registration.");
+            logger.error("Error validating access token: " + e.getMessage());
             return Response.status(Response.Status.UNAUTHORIZED).build();
         }
         String registeredBy = token.getPreferredUsername();
@@ -231,12 +234,12 @@ public class PSSOResource {
 
         AccessToken token;
         try {
-            token = session.tokens().decode(accessToken, AccessToken.class);
+            token = new AccessTokenValidator(session)
+                    .validate(accessToken, "psso");   // expectedClient may be null if you don’t need it
         }catch (Exception e) {
-            logger.error("Token verification failed: " + e.getMessage()+". Aborting registration.");
+            logger.error("Error validating access token: " + e.getMessage());
             return Response.status(Response.Status.UNAUTHORIZED).build();
         }
-
         String username = token.getPreferredUsername();
         // Verify if the device exists
         JpaConnectionProvider jpa = session.getProvider(JpaConnectionProvider.class);
@@ -346,23 +349,43 @@ public class PSSOResource {
         String sub = claims.get("sub").toString();
         UserModel user = session.users().getUserByUsername(realm, sub);
         String deviceUDID = device.getDeviceUDID();
-        String embeddedAssertions = claims.get("assertion").toString();
+        TokenIssuer tokenIssuer = new TokenIssuer(session);
+
+        String refreshToken;
         Map<String,Object> assertionClaims;
-        try {
-            assertionClaims = jwsDecoder.parseEmbeddedAssertion(embeddedAssertions, user, deviceUDID);
-        } catch (Exception e) {
-            logger.error("Error parsing the Embedded assertion: " + e.getMessage());
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .type("application/platformsso-login-response+jwt")
-                    .build();
+        if (claims.get("grant_type").toString().equals("refresh_token")) {
+            logger.info("Platform SSO: Refresh token request received for user "+sub);
+            refreshToken = claims.get("refresh_token").toString();
+            RefreshTokenValidator refreshTokenValidator = new RefreshTokenValidator(session);
+
+            try {
+                refreshTokenValidator.validate(refreshToken, "psso");
+                tokenIssuer.setRefreshToken(refreshToken);
+            } catch (Exception e) {
+                logger.error("Error validating refresh token: " + e.getMessage());
+                Response response = Response.status(Response.Status.UNAUTHORIZED).build();
+            }
+        }else {
+            logger.info("Platform SSO: T" +
+                    "oken request received for user "+sub);
+            String embeddedAssertions = claims.get("assertion").toString();
+
+            try {
+                assertionClaims = jwsDecoder.parseEmbeddedAssertion(embeddedAssertions, user, deviceUDID);
+            } catch (Exception e) {
+                logger.error("Error parsing the Embedded assertion: " + e.getMessage());
+                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .type("application/platformsso-login-response+jwt")
+                        .build();
+            }
         }
         String nonce = claims.get("nonce").toString();
         ClientModel client = session.clients().getClientByClientId(realm,"psso");
-        TokenIssuer tokenIssuer = new TokenIssuer(session);
         EventBuilder event = new EventBuilder(realm, session, session.getContext().getConnection());
         Set<String> clientScopeIds = client.getClientScopes(true).keySet();
-        logger.debug("Client scope IDs: " + clientScopeIds);
-        IssuedTokens tokens = tokenIssuer.issueSignedTokens(realm,user, client, "openid offline_access urn:apple:platformsso", event, nonce);
+        //
+        // logger.debug("Client scope IDs: " + clientScopeIds);
+        IssuedTokens tokens = tokenIssuer.issueSignedTokens(realm,user, client, "openid offline_access urn:apple:platformsso groups", event, nonce, false);
 
         for (String claim : claims.keySet()) {
             logger.debug("Request claim: "+ claim +": " + claims.get(claim));
@@ -377,6 +400,12 @@ public class PSSOResource {
         ECKey deviceKeyEC;
         String jwe;
         ECPublicKey deviceKeyECPublicKey;
+
+        String refreshExpiresIn = String.valueOf(tokenIssuer.refreshExpiresIn);
+        String expiresIn = String.valueOf(tokenIssuer.expiresIn);
+
+
+
         try {
           deviceKeyECPublicKey = jwsDecoder.convertX963ToECPublicKey(device.getEncryptionKey());
             deviceKeyEC = new ECKey.Builder(
@@ -390,8 +419,8 @@ public class PSSOResource {
                     apvBytes,
                     tokens.idToken,
                     tokens.refreshToken,
-                    (int) tokenIssuer.expiresIn,
-                    (int) tokenIssuer.expiresIn,
+                    expiresIn,
+                    refreshExpiresIn,
                     "platformsso-login-response+jwt"
             );
             JWEObject parsed = JWEObject.parse(jwe);

@@ -61,8 +61,8 @@ public class JweBuilder {
             byte[] apv,             // client PartyVInfo (may be null)
             String idTokenSigned,
             String refreshToken,
-            Integer expiresIn,
-            Integer refreshExpiresIn,
+            String expiresIn,
+            String refreshExpiresIn,
             String typHeaderValue
     ) throws JOSEException {
 
@@ -231,8 +231,6 @@ public class JweBuilder {
             SecretKey cek = new SecretKeySpec(cekBytes, "AES");
 
             // debug
-            logger.info("Derived CEK length: " + cekBytes.length + " algorithm: " + cek.getAlgorithm());
-
             return cek;
         } catch (Exception e) {
             logger.error("CEK derivation failed: " + e.toString(), e);
@@ -287,11 +285,6 @@ public class JweBuilder {
         // 6) Compact serialization: BASE64URL(header) . BASE64URL(encrypted_key) . BASE64URL(iv) . BASE64URL(ciphertext) . BASE64URL(tag)
         // encrypted_key is empty string (still keep delimiter)
         String compact = headerB64.toString() + "." + encryptedKeyB64 + "." + ivB64.toString() + "." + ciphertextB64.toString() + "." + tagB64.toString();
-
-        // optional debug logs
-        logger.info("Built compact JWE header: " + headerJsonString);
-        logger.info("IV (hex): " + bytesHex(iv));
-        logger.info("CT length: " + ciphertext.length + " tag len: " + tag.length);
 
         return compact;
     }

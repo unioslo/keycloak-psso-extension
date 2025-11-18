@@ -102,7 +102,7 @@ public class AssertionValidator {
 
         // ---- grant_type ----
         String grantType = (String) claims.get("grant_type");
-        if (!"urn:ietf:params:oauth:grant-type:jwt-bearer".equals(grantType)) {
+        if (!"urn:ietf:params:oauth:grant-type:jwt-bearer".equals(grantType) || "refresh_token".equals(grantType)) {
             logger.error("Invalid grant type: " + grantType);
             throw new IllegalArgumentException("Invalid grant_type: " + grantType);
         }

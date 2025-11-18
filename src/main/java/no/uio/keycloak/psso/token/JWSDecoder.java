@@ -64,6 +64,11 @@ public class JWSDecoder {
             throw new IllegalArgumentException("Missing kid in JWS header.");
         }
 
+        if (!"ES256".equals(header.getAlgorithm().getName())) {
+            logger.error("Invalid JWS header algorithm: " + header.getAlgorithm().getName());
+            throw new IllegalArgumentException("Unexpected alg for embedded assertion: " + header.getAlgorithm());
+        }
+
         logger.infof("Platform SSO JWS kid: %s", kid);
 
         // --- 1) Load device by kid ---
@@ -160,12 +165,15 @@ public class JWSDecoder {
         UserPSSOCredentialData credentialData = null;
         for (CredentialModel existingCred : credentials) {
             String id = existingCred.getId();
-            credentialData = UserPSSOCredentialModel.getCredentialData(existingCred);
-            String currentDeviceUDID = credentialData.getDeviceUDID();
+            UserPSSOCredentialData cd = UserPSSOCredentialModel.getCredentialData(existingCred);
+            String currentDeviceUDID = cd.getDeviceUDID();
             if (deviceUDID.equals(currentDeviceUDID)) {
+                credentialData = cd;
                 break;
             }
         }
+
+
         String userKey = "";
         if (credentialData != null){
             userKey = credentialData.getUserSecureEnclaveKey();
