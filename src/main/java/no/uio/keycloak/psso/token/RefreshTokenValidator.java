@@ -2,6 +2,7 @@ package no.uio.keycloak.psso.token;
 
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
+import org.jboss.logging.Logger;
 import org.keycloak.common.util.Time;
 import org.keycloak.models.*;
 import org.keycloak.representations.RefreshToken;
@@ -12,6 +13,7 @@ public class RefreshTokenValidator {
 
     private final KeycloakSession session;
     private final RealmModel realm;
+    private final Logger logger =  Logger.getLogger(RefreshTokenValidator.class);
 
     public RefreshTokenValidator(KeycloakSession session) {
         this.session = session;
@@ -139,7 +141,9 @@ public class RefreshTokenValidator {
 
 
     private WebApplicationException unauthorized(String msg) {
+        logger.error(msg);
         return new WebApplicationException(
+
                 Response.status(Response.Status.UNAUTHORIZED)
                         .entity(Map.of("error", msg))
                         .build());

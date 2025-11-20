@@ -22,56 +22,30 @@ import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.util.Base64URL;
 import no.uio.keycloak.psso.token.*;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.NoResultException;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
 import no.uio.keycloak.psso.token.JWSDecoder;
 import org.jboss.logging.Logger;
-import org.json.JSONArray;
-import org.json.JSONObject;
-import org.keycloak.Token;
-import org.keycloak.TokenVerifier;
-import org.keycloak.component.ComponentModel;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.credential.CredentialModel;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
-import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
-import org.infinispan.Cache;
+
 
 
 import org.keycloak.models.UserModel;
-import org.keycloak.protocol.oidc.TokenManager;
 import org.keycloak.representations.AccessToken;
-import org.keycloak.representations.RefreshToken;
-import org.keycloak.services.resources.LoginActionsService;
-import org.keycloak.sessions.AuthenticationSessionModel;
-import org.keycloak.sessions.AuthenticationSessionProvider;
-import org.keycloak.sessions.RootAuthenticationSessionModel;
 
-
-import java.io.ByteArrayInputStream;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.PublicKey;
 import java.security.SecureRandom;
-import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.security.interfaces.ECPublicKey;
-import java.security.spec.ECPoint;
 import java.util.Base64;
-import java.security.interfaces.RSAPrivateKey;
 import java.util.*;
-import java.util.stream.Collectors;
 
 
 @Path("")
@@ -98,7 +72,6 @@ public class PSSOResource {
 
         logger.info("Noonce request. From: " + ip_address+ ", User-Agent: " + userAgent+" Client Request ID: "+clientRequestId+ " Grant Type: "+grantType);
 
-        HttpHeaders headers = session.getContext().getRequestHeaders();
 
         if (clientRequestId == null || clientRequestId.isEmpty() || !grantType.equals("srv_challenge")) {
            String error = "Missing required parameters: grant_type, client-request-id and/or nonce";
@@ -310,7 +283,7 @@ public class PSSOResource {
 
         } catch (Exception e) {
             logger.error("Error parsing JWS compact claims: " + e.getMessage());
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+            return Response.status(Response.Status.UNAUTHORIZED)
                     .type("application/platformsso-login-response+jwt")
                     .build();
             // return Response.status(Response.Status.UNAUTHORIZED).build();
@@ -326,7 +299,7 @@ public class PSSOResource {
                     .getSingleResult();
         } catch (Exception e) {
             logger.error("Error finding device by signingKeyId: " + deviceKey+"- "+ e.getMessage());
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+            return Response.status(Response.Status.UNAUTHORIZED)
                     .type("application/platformsso-login-response+jwt")
                     .build();
         }
@@ -342,7 +315,7 @@ public class PSSOResource {
 
         } catch (Exception e) {
             logger.error("Error validating device: " + e.getMessage());
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+            return Response.status(Response.Status.UNAUTHORIZED)
                     .type("application/platformsso-login-response+jwt")
                     .build();
         }
@@ -366,15 +339,14 @@ public class PSSOResource {
                 Response response = Response.status(Response.Status.UNAUTHORIZED).build();
             }
         }else {
-            logger.info("Platform SSO: T" +
-                    "oken request received for user "+sub);
+            logger.info("Platform SSO: Token request received for user "+sub);
             String embeddedAssertions = claims.get("assertion").toString();
 
             try {
                 assertionClaims = jwsDecoder.parseEmbeddedAssertion(embeddedAssertions, user, deviceUDID);
             } catch (Exception e) {
                 logger.error("Error parsing the Embedded assertion: " + e.getMessage());
-                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                return Response.status(Response.Status.UNAUTHORIZED)
                         .type("application/platformsso-login-response+jwt")
                         .build();
             }
@@ -385,7 +357,7 @@ public class PSSOResource {
         Set<String> clientScopeIds = client.getClientScopes(true).keySet();
         //
         // logger.debug("Client scope IDs: " + clientScopeIds);
-        IssuedTokens tokens = tokenIssuer.issueSignedTokens(realm,user, client, "openid offline_access urn:apple:platformsso groups", event, nonce, false);
+        IssuedTokens tokens = tokenIssuer.issueSignedTokens(realm,user, client, "openid offline_access urn:apple:platformsso groups", event, nonce, false, device);
 
         for (String claim : claims.keySet()) {
             logger.debug("Request claim: "+ claim +": " + claims.get(claim));
@@ -432,7 +404,7 @@ public class PSSOResource {
          } catch ( Exception e)
         {
             logger.error("Error Creating the JWE: " + e.getMessage());
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+            return Response.status(Response.Status.UNAUTHORIZED)
                     .type("application/platformsso-login-response+jwt")
                     .build();
         }

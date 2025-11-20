@@ -9,11 +9,10 @@ import no.uio.keycloak.psso.token.RefreshTokenValidator;
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.*;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
-import org.keycloak.models.UserModel;
-import org.keycloak.models.UserSessionModel;
+import org.keycloak.models.*;
 import org.keycloak.representations.RefreshToken;
+import org.keycloak.services.managers.AuthenticationManager;
+import org.keycloak.sessions.AuthenticationSessionModel;
 
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
@@ -78,20 +77,34 @@ public class PSSOAuthenticator  implements Authenticator {
 
                String kid = env.get("kid").asText();
                RefreshTokenValidator validator = new RefreshTokenValidator(context.getSession());
-               RefreshToken token = validator.validate(refreshToken,"psso");
-               String username = token.getSubject();
+               RefreshToken token = null;
+
+               try {
+                   token = validator.validate(refreshToken,"psso");
+               }catch (Exception e){
+                    logger.error("Platform SSO: Invalid refresh token: "+e+"   "+requestData);
+                    context.attempted();
+               }
+
                if (token != null) {
+                   String username = token.getSubject();
                    logger.info("Platform SSO: User " + username + " successfully authenticated with SSO Token. "+requestData);
                    UserModel user = context.getSession().users().getUserByUsername(realm,username);
                    context.setUser(user);
 
-                   if (env.has("sid") && !env.get("sid").asText().isEmpty()){
-                       String sid = env.get("sid").asText();
-                       UserSessionModel existing = context.getSession().sessions().getUserSession(context.getRealm(), sid);
-                       if (existing != null) {
+                   if (token.getSessionId() != null) {
+                       String sid = token.getSessionId();
+                       UserSessionModel existingSession = context.getSession().sessions().getUserSession(context.getRealm(), sid);
+                       AuthenticationSessionModel authSession = context.getAuthenticationSession();
+                        ClientModel client = authSession.getClient();
+                        AuthenticatedClientSessionModel clientSession;
+
+                        logger.info("Is session valid? "+AuthenticationManager.isSessionValid(realm,existingSession));
+                       if (existingSession != null ) {
                            // Force Keycloak to use this already-active session
-                           context.attachUserSession(existing);
-                           ;
+                           authSession.setAuthNote(AuthenticationManager.SSO_AUTH, "true");
+                           context.attachUserSession(existingSession);
+
                        }
 
                    }

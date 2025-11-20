@@ -18,25 +18,35 @@
 
 package no.uio.keycloak.psso.token;
 
-import jakarta.ws.rs.core.Response;
+import no.uio.keycloak.psso.Device;
 import org.jboss.logging.Logger;
-import org.keycloak.Token;
+import org.keycloak.authentication.AuthenticationProcessor;
+import org.keycloak.common.ClientConnection;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.*;
+import org.keycloak.models.session.PersistentUserSessionAdapter;
+import org.keycloak.models.sessions.infinispan.ClientSessionManager;
+import org.keycloak.models.sessions.infinispan.PersistentUserSessionProvider;
 import org.keycloak.protocol.oidc.OIDCLoginProtocol;
 import org.keycloak.protocol.oidc.TokenManager;
-import org.keycloak.representations.AccessToken;
 import org.keycloak.representations.AccessTokenResponse;
 import org.keycloak.representations.IDToken;
 import org.keycloak.representations.RefreshToken;
+import org.keycloak.services.DefaultKeycloakContext;
+import org.keycloak.services.managers.AuthenticationManager;
+import org.keycloak.services.managers.AuthenticationSessionManager;
+import org.keycloak.services.managers.UserSessionManager;
 import org.keycloak.services.util.DefaultClientSessionContext;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.sessions.RootAuthenticationSessionModel;
 import org.keycloak.common.util.Time;
 
+import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class TokenIssuer {
     private static final Logger logger = Logger.getLogger(TokenIssuer.class);
@@ -64,7 +74,8 @@ public class TokenIssuer {
                                           String scope,
                                           EventBuilder event,
                                           String nonce,
-                                          boolean isRefresh
+                                          boolean isRefresh,
+                                          Device device
                                             ) {
 
         // 1) Create a transient authentication session (used by some flows)
@@ -73,13 +84,14 @@ public class TokenIssuer {
         authSession.setAuthenticatedUser(user);
         authSession.setProtocol("openid-connect");
 
-
+        boolean rememberMe = realm.isRememberMe();
         if (scope != null && !scope.isBlank()) {
             authSession.setClientNote(OIDCLoginProtocol.SCOPE_PARAM, scope);
         }
-
-        UserSessionModel userSession;
-        AuthenticatedClientSessionModel clientSession;
+        String deviceUDID = device.getDeviceUDID();
+        int nowSecs = Time.currentTime();
+        UserSessionModel userSession = null;
+        AuthenticatedClientSessionModel clientSession = null;
 
         if (isRefresh && refreshToken.getType().equalsIgnoreCase("refresh")) {
             String sid = this.refreshToken.getSessionId();
@@ -97,26 +109,49 @@ public class TokenIssuer {
             userSession = existingUserSession;
 
         }else {
-            userSession = session.sessions().createUserSession(
-                    null, /* id - let Keycloak generate */
-                    realm,
-                    user,
-                    user.getUsername(),
-                    session.getContext().getConnection().getRemoteAddr(),
-                    "openid-connect",
-                    true, /* rememberMe */
-                    null,  /* brokerSessionId */
-                    null,  /* brokerUserId */
-                    UserSessionModel.SessionPersistenceState.PERSISTENT);
-                    clientSession = session.sessions().createClientSession(realm, client, userSession);
+            Stream<UserSessionModel> existingUserSessions = session.sessions().getUserSessionsStream(realm, user);
+            for (UserSessionModel existingSession : existingUserSessions.toList()){
+                String sessionDeviceUDID = existingSession.getNotes().get("psso.udid");
+                if (deviceUDID.equals(sessionDeviceUDID)){
+                    userSession = existingSession;
+                    clientSession = userSession.getAuthenticatedClientSessionByClient(client.getId());
+                    if (clientSession == null) {
+                        clientSession = session.sessions().createClientSession(realm, client, userSession);
+
+                    }
+                }
+            }
+            if (userSession == null) {
+
+                String uuid = UUID.randomUUID().toString();
+                String ip = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("X-Forwarded-For");
+
+                UserSessionManager userSessionManager = new UserSessionManager(session);
+                userSession = userSessionManager.createUserSession(uuid,  realm, user, user.getUsername(), ip, "psso", rememberMe, null, null, UserSessionModel.SessionPersistenceState.PERSISTENT);
+/*
+                userSession = session.sessions().createUserSession(
+                        null,
+                        realm,
+                        user,
+                        user.getUsername(),
+                        session.getContext().getConnection().getRemoteAddr(),
+                        "openid-connect",
+                        true, //
+                        null,  // brokerSessionId
+                        null,  // brokerUserId
+                        UserSessionModel.SessionPersistenceState.PERSISTENT);
+                        */
+              //  ClientSessionManager clientSessionManager = new ClientSessionManager(session);
+                clientSession = session.sessions().createClientSession(realm, client, userSession);
+
+            }
 
         }
+        userSession.setNote("psso.udid",deviceUDID);
+        userSession.setLastSessionRefresh(nowSecs);
+        userSession.setState(UserSessionModel.State.LOGGED_IN);
 
-        // 3) Create an authenticated client session attached to the user session
 
-        // --- Begin: ensure minimum required clientSession/authSession state ----------------
-
-        // protocol
         clientSession.setProtocol("openid-connect");
 
 
@@ -133,8 +168,6 @@ public class TokenIssuer {
             authSession.setClientNote(OIDCLoginProtocol.REDIRECT_URI_PARAM, redirect);
         }
 
-        // set response_type - choose "code" as standard; use "id_token token" only if you need implicit behavior
-        // Using "code" signals the builder that an authorization flow was intended/completed.
         clientSession.setNote(OIDCLoginProtocol.RESPONSE_TYPE_PARAM, "code");
         authSession.setClientNote(OIDCLoginProtocol.RESPONSE_TYPE_PARAM, "code");
 
@@ -144,18 +177,10 @@ public class TokenIssuer {
             authSession.setClientNote(OIDCLoginProtocol.SCOPE_PARAM, scope);
         }
 
-        // timestamps - some TokenManager logic reads timestamps on clientSession/userSession
-        int nowSecs = (int) (Time.currentTime() / 1000L);
-       // clientSession.setTimestamp(nowSecs);
-        userSession.setLastSessionRefresh(nowSecs);
+        authSession.setAuthNote(AuthenticationManager.SSO_AUTH, "true");
 
-        // make sure root/auth sessions know protocol
-        //root.setProtocol("openid-connect");
+
         authSession.setProtocol("openid-connect");
-
-        // --- End: clientSession/authSession fixes ----------------------------------------
-
-        // 4) Build ClientSessionContext from client session and client's client-scope set
 
         Set<ClientScopeModel> scopes = TokenManager.getRequestedClientScopes(
                 session,
@@ -198,12 +223,8 @@ public class TokenIssuer {
         RefreshToken refreshTokenObject = builder.getRefreshToken();
         refreshTokenObject.setSubject(user.getUsername());
         refreshTokenObject.setPreferredUsername(user.getUsername());
-        // Not necessary
-        // Keycloak already sets sid for Refresh tokens
-        // and don't do it when the refresh token is offline
-       // refreshTokenObject.setSessionId(userSession.getId());
-        //refreshTokenObject.setPreferredUsername(user.getUsername());
-       // refreshTokenObject.setOtherClaims("tsid", clientSession.getId());
+
+
 
         String issuer = token.getIssuer();
         if (issuer == null) {
@@ -229,13 +250,70 @@ public class TokenIssuer {
         response.setRefreshExpiresIn((int) exp);
         this.refreshExpiresIn = exp;
         this.expiresIn = realm.getAccessTokenLifespan();
-
+        TokenManager.attachAuthenticationSession(session, userSession,authSession);
         tm.transformAccessTokenResponse(session, response, userSession, clientCtx);
 
+
+        int now = Time.currentTime(); // seconds in your KC version
+
+        logger.infof("DIAG: now=%d (seconds)", now);
+        logger.infof("DIAG: userSession.id=%s realm=%s", userSession.getId(),
+                userSession.getRealm() != null ? userSession.getRealm().getName() : "null");
+        logger.infof("DIAG: userSession.state=%s", userSession.getState());
+        logger.infof("DIAG: userSession.started=%d", userSession.getStarted());
+        logger.infof("DIAG: userSession.lastRefresh=%d", userSession.getLastSessionRefresh());
+        logger.infof("DIAG: clientSession.timestamp=%d", clientSession.getTimestamp());
+        logger.infof("DIAG: realm.idleTimeout=%d maxLifespan=%d", realm.getSsoSessionIdleTimeout(), realm.getSsoSessionMaxLifespan());
+
+// Manual checks exactly like KC (seconds arithmetic)
+        boolean startedOk = (userSession.getStarted() + realm.getSsoSessionMaxLifespan()) > now;
+        boolean refreshOk = (userSession.getLastSessionRefresh() + realm.getSsoSessionIdleTimeout()) > now;
+        boolean stateOk = (userSession.getState() == UserSessionModel.State.LOGGED_IN);
+        boolean realmMatch = userSession.getRealm() == realm || (userSession.getRealm() != null && userSession.getRealm().getId().equals(realm.getId()));
+
+        logger.infof("DIAG: startedOk=%b (started + max=%d > now=%d)", startedOk,
+                userSession.getStarted() + realm.getSsoSessionMaxLifespan(), now);
+        logger.infof("DIAG: refreshOk=%b (lastRefresh + idle=%d > now=%d)", refreshOk,
+                userSession.getLastSessionRefresh() + realm.getSsoSessionIdleTimeout(), now);
+        logger.infof("DIAG: stateOk=%b realmMatch=%b", stateOk, realmMatch);
+
+// List authenticated client sessions related info (helpful)
+        try {
+            Map<String, AuthenticatedClientSessionModel> sessionsMap =
+                    userSession.getAuthenticatedClientSessions();
+
+            logger.infof("DIAG: authenticated client sessions count = %d", sessionsMap.size());
+
+             Collection<AuthenticatedClientSessionModel> found =
+                    sessionsMap.values();
+            for ( AuthenticatedClientSessionModel authenticatedClientSessionModel : found) {
+                logger.info(authenticatedClientSessionModel.toString());
+                logger.info("Client "+authenticatedClientSessionModel.getId());
+                logger.info("Client user session id"+authenticatedClientSessionModel.getUserSession().getId());
+                logger.info("Client user session state"+authenticatedClientSessionModel.getUserSession().getState());
+                logger.info("Client user session persistent state: "+authenticatedClientSessionModel.getUserSession().getPersistenceState());
+                UserSessionModel thisSession = authenticatedClientSessionModel.getUserSession();
+                logger.info("Client user session validity: "+AuthenticationManager.isSessionValid(realm,thisSession));
+            }
+
+
+        } catch (Exception x) {
+            logger.info("DIAG: error listing client sessions: " + x.getMessage());
+        }
+        logger.infof("DIAG: is session Persistent? "+userSession.getPersistenceState());
+        userSession.getStarted();
 // 7) Pull signed token strings directly
         String accessToken = response.getToken();        // access_token (encoded JWT)
         String idToken = response.getIdToken();         // id_token (encoded JWT)
         String refreshTokenString = response.getRefreshToken(); // refresh_token (encoded JWT or opaque)
+       logger.info("Refresh token: "+refreshTokenString);
+
+        logger.infof("Is ClientSession Valid? "+AuthenticationManager.isClientSessionValid(realm,client,userSession, clientSession));
+        logger.info("Is SSO Authentication? "+ AuthenticationManager.isSSOAuthentication(clientSession));
+
+        logger.info("Is session valid? "+ AuthenticationManager.isSessionValid(realm,userSession));
+
+
         return new IssuedTokens(accessToken, idToken, refreshTokenString);
 
     }
