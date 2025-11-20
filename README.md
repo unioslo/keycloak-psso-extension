@@ -33,7 +33,7 @@ Device and user registrations require a valid Access Token from the user. Our co
 
 We also developed a companion SSO Extension called _Weblogin SSO_, which is a bit limited in certain situations. 
 
-You can download the SSO Extension here: 
+You can check the SSO Extension here: https://github.com/unioslo/weblogin-mac-sso-extension
 
 
 ## Acknowledgement
