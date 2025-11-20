@@ -12,7 +12,7 @@ This is a Keycloak extension that makes Keycloak compliant with [Apple Platform 
 ## Known limitations
 
 - **Secure Enclave-only**: this extension only implements the Secure Enclave authentication method. 
-- **Fixed client**: to use this extension, you need to create a client called _psso_. In the future we will make this configurable. The client needs to be public and it needs to include the `urn:apple:platformsso` scope.
+- **Fixed client**: to use this extension, you need to create a client called _psso_. In the future we will make this configure. The client needs to be public and it needs to include the `urn:apple:platformsso` scope.
 - **Revoke Refresh Token needs to be off**: the refresh token is used for login, as it is used as an opaque token to authenticate and identify the user. In the future we might change this. This is the default option in Keycloak.
 - **Missing ACR/LoA and other checks**: If you use ACS/LoA, there are no checks on this authenticator. It will be implemented.
 - **Might be incompatible with the _Organizations_ feature**: We based our Authenticator on the Cookies Authenticator, which does a series of checks, including organization checks. These are not implemented here yet.
