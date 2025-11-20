@@ -1,18 +1,18 @@
 /* Copyright 2025 University of Oslo, Norway
- # This file is part of Cerebrum.
+ # This file is part of the Keycloak Platform SSO Extension codebase.
  #
  # This extension for Keycloak is free software; you can redistribute
  # it and/or modify it under the terms of the GNU General Public License
  # as published by the Free Software Foundation;
  # either version 2 of the License, or (at your option) any later version.
  #
- # This extension  is distributed in the hope that it will be useful, but
+ # This extension is distributed in the hope that it will be useful, but
  # WITHOUT ANY WARRANTY; without even the implied warranty of
  # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  # General Public License for more details.
  #
  # You should have received a copy of the GNU General Public License
- # along with extension; if not, write to the Free Software Foundation,
+ # along with this extension; if not, write to the Free Software Foundation,
  # Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
 */
 package no.uio.keycloak.psso;
@@ -47,7 +47,10 @@ import java.security.interfaces.ECPublicKey;
 import java.util.Base64;
 import java.util.*;
 
-
+/**
+ * @author <a href="mailto:franciaa@uio.no">Francis Augusto Medeiros-Logeay</a>
+ * @version $Revision: 1 $
+ */
 @Path("")
 public class PSSOResource {
 
@@ -75,6 +78,7 @@ public class PSSOResource {
 
         if (clientRequestId == null || clientRequestId.isEmpty() || !grantType.equals("srv_challenge")) {
            String error = "Missing required parameters: grant_type, client-request-id and/or nonce";
+            logger.error(error+ "From: " + ip_address+ ", User-Agent: " + userAgent+" Client Request ID: "+clientRequestId+ " Grant Type: "+grantType);
 
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity(Map.of("error", error))
@@ -83,7 +87,7 @@ public class PSSOResource {
 
         NonceService nonceService = new NonceService(session);
         String nonce = nonceService.createNonce(clientRequestId);
-        logger.info("Nonce created: " + nonce);
+        logger.debug("Nonce created: " + nonce);
         return Response.ok(Map.of("nonce", nonce)).build();
     }
 
@@ -326,6 +330,8 @@ public class PSSOResource {
 
         String refreshToken;
         Map<String,Object> assertionClaims;
+        // Never happens in Secure Enclave authentication.
+        // Will be used if we implement other types of authentication methods
         if (claims.get("grant_type").toString().equals("refresh_token")) {
             logger.info("Platform SSO: Refresh token request received for user "+sub);
             refreshToken = claims.get("refresh_token").toString();

@@ -1,5 +1,5 @@
 /* Copyright 2025 University of Oslo, Norway
- # This file is part of Cerebrum.
+ # This file is part of the Keycloak Platform SSO Extension codebase.
  #
  # This extension for Keycloak is free software; you can redistribute
  # it and/or modify it under the terms of the GNU General Public License
@@ -23,7 +23,10 @@ import org.keycloak.credential.CredentialModel;
 import org.keycloak.util.JsonSerialization;
 
 
-
+/**
+ * @author <a href="mailto:franciaa@uio.no">Francis Augusto Medeiros-Logeay</a>
+ * @version $Revision: 1 $
+ */
 public class UserPSSOCredentialModel extends CredentialModel{
     public static final String TYPE = "psso";
     private String userSecureEnclaveKey;

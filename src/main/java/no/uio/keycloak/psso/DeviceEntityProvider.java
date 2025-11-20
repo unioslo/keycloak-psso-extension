@@ -1,12 +1,12 @@
 /* Copyright 2025 University of Oslo, Norway
- # This file is part of Cerebrum.
+ # This file is part of the Keycloak Platform SSO Extension codebase.
  #
  # This extension for Keycloak is free software; you can redistribute
  # it and/or modify it under the terms of the GNU General Public License
  # as published by the Free Software Foundation;
  # either version 2 of the License, or (at your option) any later version.
  #
- # This extension  is distributed in the hope that it will be useful, but
+ # This extension is distributed in the hope that it will be useful, but
  # WITHOUT ANY WARRANTY; without even the implied warranty of
  # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  # General Public License for more details.
@@ -21,7 +21,10 @@ import org.keycloak.connections.jpa.entityprovider.JpaEntityProvider;
 
 import java.util.Collections;
 import java.util.List;
-
+/**
+ * @author <a href="mailto:franciaa@uio.no">Francis Augusto Medeiros-Logeay</a>
+ * @version $Revision: 1 $
+ */
 public class DeviceEntityProvider implements JpaEntityProvider {
 
     @Override

@@ -1,5 +1,5 @@
 /* Copyright 2025 University of Oslo, Norway
- # This file is part of Cerebrum.
+ # This file is part of the Keycloak Platform SSO Extension codebase.
  #
  # This extension for Keycloak is free software; you can redistribute
  # it and/or modify it under the terms of the GNU General Public License
@@ -18,10 +18,7 @@
 
 package no.uio.keycloak.psso;
 
-import org.bouncycastle.asn1.ASN1Encodable;
-import org.bouncycastle.asn1.ASN1OctetString;
-import org.bouncycastle.asn1.ASN1Primitive;
-import org.bouncycastle.asn1.ASN1Sequence;
+
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.util.encoders.Hex;
 import org.jboss.logging.Logger;
@@ -34,7 +31,10 @@ import java.security.PublicKey;
 import java.security.Security;
 import java.security.cert.*;
 import java.util.*;
-
+/**
+ * @author <a href="mailto:franciaa@uio.no">Francis Augusto Medeiros-Logeay</a>
+ * @version $Revision: 1 $
+ */
 public class AppleAttestationVerifier {
 
     private static final Logger logger = Logger.getLogger(AppleAttestationVerifier.class);
@@ -96,7 +96,7 @@ public class AppleAttestationVerifier {
             byte[] leafKeyBytes = extractRawECPoint(leafCert.getPublicKey());
             byte[] clientKeyBytes = decodeRawBase64Key(deviceSigningKeyB64);
             if (!Arrays.equals(leafKeyBytes, clientKeyBytes)) {
-                logger.warn("Public key mismatch between attested cert and provided key");
+                logger.error("Public key mismatch between attested cert and provided key");
                 return false;
             }
             logger.debug("Public key matches device key");
@@ -109,7 +109,7 @@ public class AppleAttestationVerifier {
             // Step 5: Extract nonce hash from OID 1.2.840.113635.100.8.11.1
             byte[] extValue = leafCert.getExtensionValue(NONCE_OID);
             if (extValue == null || extValue.length != 34 || extValue[0] != 0x04 || extValue[1] != 0x20) {
-                logger.warn("Freshness extension (1.2.840.113635.100.8.11.1) missing or malformed. Got: " +
+                logger.error("Freshness extension (1.2.840.113635.100.8.11.1) missing or malformed. Got: " +
                         (extValue == null ? "null" : Hex.toHexString(extValue)));
                 return false;
             }
@@ -118,7 +118,7 @@ public class AppleAttestationVerifier {
             byte[] serial = leafCert.getExtensionValue(SERIAL_OID);
             if (serial == null  || serial[0] != 0x04 ) {
 
-                logger.warn("Serial missing or malformed. Got: " +
+                logger.error("Serial missing or malformed. Got: " +
                         (serial == null ? "null" : Hex.toHexString(serial)));
                 return false;
             }
@@ -128,7 +128,7 @@ public class AppleAttestationVerifier {
             // Step 6: Extract serial number
             byte[] deviceUDid = leafCert.getExtensionValue(DEVICE_UDID_OID);
             if (deviceUDid == null || deviceUDid[0] != 0x04) {
-                logger.warn("DeviceUDID missing or malformed. Got: " +
+                logger.error("DeviceUDID missing or malformed. Got: " +
                         (deviceUDid == null ? "null" : Hex.toHexString(deviceUDid)));
                 return false;
             }
@@ -151,7 +151,7 @@ public class AppleAttestationVerifier {
                 this.deviceAttestationObject = deviceAttestationObject;
                 return true;
             } else {
-                logger.warn("Nonce mismatch! Device might be replaying old attestation.");
+                logger.error("Nonce mismatch! Device might be replaying old attestation.");
                 return false;
             }
 

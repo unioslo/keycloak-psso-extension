@@ -1,3 +1,21 @@
+/* Copyright 2025 University of Oslo, Norway
+ # This file is part of the Keycloak Platform SSO Extension codebase.
+ #
+ # This extension for Keycloak is free software; you can redistribute
+ # it and/or modify it under the terms of the GNU General Public License
+ # as published by the Free Software Foundation;
+ # either version 2 of the License, or (at your option) any later version.
+ #
+ # This extension is distributed in the hope that it will be useful, but
+ # WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ # General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this extension; if not, write to the Free Software Foundation,
+ # Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
+*/
+
 package no.uio.keycloak.psso;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -21,7 +39,10 @@ import java.security.Signature;
 import java.security.spec.X509EncodedKeySpec;
 import java.time.Instant;
 import java.util.*;
-
+/**
+ * @author <a href="mailto:franciaa@uio.no">Francis Augusto Medeiros-Logeay</a>
+ * @version $Revision: 1 $
+ */
 public class PSSOAuthenticator  implements Authenticator {
     private static final Logger logger = Logger.getLogger(PSSOAuthenticator.class);
 
@@ -99,7 +120,6 @@ public class PSSOAuthenticator  implements Authenticator {
                         ClientModel client = authSession.getClient();
                         AuthenticatedClientSessionModel clientSession;
 
-                        logger.info("Is session valid? "+AuthenticationManager.isSessionValid(realm,existingSession));
                        if (existingSession != null ) {
                            // Force Keycloak to use this already-active session
                            authSession.setAuthNote(AuthenticationManager.SSO_AUTH, "true");
@@ -109,15 +129,10 @@ public class PSSOAuthenticator  implements Authenticator {
 
                    }
 
-                    logger.info("Platform SSO: User " + username + " successfully authenticated with SSO Token. "+requestData);
-
+                   logger.info("Platform SSO: User " + username + " successfully authenticated with SSO Token. "+requestData);
                    context.success();
                    return;
                }
-
-
-                   ;
-
            }
 
             context.attempted();
