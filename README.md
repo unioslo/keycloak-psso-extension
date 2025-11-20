@@ -7,6 +7,7 @@ This is a Keycloak extension that makes Keycloak compliant with [Apple Platform 
 - Provides device attestation so that only requests from enrolled macOS devices are accepted
 - Allows revocation of user registration on GUI, both for users and administrators
 
+![User registration is trated as a credential on Keycloak. The user (and administrators) can see and managem them.](https://github.com/user-attachments/assets/8d94bd8c-66a2-4cd3-ba9e-6f29a0254e54)
 
 
 ## Known limitations
