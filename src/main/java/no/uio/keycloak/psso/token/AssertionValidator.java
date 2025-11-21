@@ -1,5 +1,5 @@
 /* Copyright 2025 University of Oslo, Norway
- # This file is part of Cerebrum.
+ # This file is part of the Keycloak Platform SSO Extension codebase.
  #
  # This extension for Keycloak is free software; you can redistribute
  # it and/or modify it under the terms of the GNU General Public License
@@ -29,7 +29,10 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-
+/**
+ * @author <a href="mailto:franciaa@uio.no">Francis Augusto Medeiros-Logeay</a>
+ * @version $Revision: 1 $
+ */
 public class AssertionValidator {
 
     private static final Logger logger = Logger.getLogger(AssertionValidator.class);

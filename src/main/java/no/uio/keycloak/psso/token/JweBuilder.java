@@ -1,5 +1,5 @@
 /* Copyright 2025 University of Oslo, Norway
- # This file is part of Cerebrum.
+ # This file is part of the Keycloak Platform SSO Extension codebase.
  #
  # This extension for Keycloak is free software; you can redistribute
  # it and/or modify it under the terms of the GNU General Public License
@@ -15,7 +15,6 @@
  # along with this extension; if not, write to the Free Software Foundation,
  # Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
 */
-
 package no.uio.keycloak.psso.token;
 
 import com.nimbusds.jose.*;
@@ -26,12 +25,8 @@ import com.nimbusds.jose.util.Base64URL;
 import org.jboss.logging.Logger;
 import org.json.JSONException;
 import org.json.JSONObject;
-
-
-import org.jose4j.base64url.Base64Url;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.ECPrivateKey;
-
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyAgreement;
@@ -42,10 +37,12 @@ import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
-import java.security.interfaces.ECPrivateKey;
-import java.security.interfaces.ECPublicKey;
 import java.util.*;
 
+/**
+ * @author <a href="mailto:franciaa@uio.no">Francis Augusto Medeiros-Logeay</a>
+ * @version $Revision: 1 $
+ */
 public class JweBuilder {
 
     private static final Logger logger = Logger.getLogger(JweBuilder.class);

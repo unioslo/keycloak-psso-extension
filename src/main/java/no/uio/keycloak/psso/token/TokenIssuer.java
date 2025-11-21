@@ -1,5 +1,5 @@
 /* Copyright 2025 University of Oslo, Norway
- # This file is part of Cerebrum.
+ # This file is part of the Keycloak Platform SSO Extension codebase.
  #
  # This extension for Keycloak is free software; you can redistribute
  # it and/or modify it under the terms of the GNU General Public License
@@ -20,34 +20,30 @@ package no.uio.keycloak.psso.token;
 
 import no.uio.keycloak.psso.Device;
 import org.jboss.logging.Logger;
-import org.keycloak.authentication.AuthenticationProcessor;
-import org.keycloak.common.ClientConnection;
+
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.*;
-import org.keycloak.models.session.PersistentUserSessionAdapter;
-import org.keycloak.models.sessions.infinispan.ClientSessionManager;
-import org.keycloak.models.sessions.infinispan.PersistentUserSessionProvider;
 import org.keycloak.protocol.oidc.OIDCLoginProtocol;
 import org.keycloak.protocol.oidc.TokenManager;
 import org.keycloak.representations.AccessTokenResponse;
 import org.keycloak.representations.IDToken;
 import org.keycloak.representations.RefreshToken;
-import org.keycloak.services.DefaultKeycloakContext;
 import org.keycloak.services.managers.AuthenticationManager;
-import org.keycloak.services.managers.AuthenticationSessionManager;
 import org.keycloak.services.managers.UserSessionManager;
 import org.keycloak.services.util.DefaultClientSessionContext;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.sessions.RootAuthenticationSessionModel;
 import org.keycloak.common.util.Time;
 
-import java.util.Collection;
-import java.util.Map;
+
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-
+/**
+ * @author <a href="mailto:franciaa@uio.no">Francis Augusto Medeiros-Logeay</a>
+ * @version $Revision: 1 $
+ */
 public class TokenIssuer {
     private static final Logger logger = Logger.getLogger(TokenIssuer.class);
     private final KeycloakSession session;
@@ -256,14 +252,6 @@ public class TokenIssuer {
 
         int now = Time.currentTime(); // seconds in your KC version
 
-        logger.infof("DIAG: now=%d (seconds)", now);
-        logger.infof("DIAG: userSession.id=%s realm=%s", userSession.getId(),
-                userSession.getRealm() != null ? userSession.getRealm().getName() : "null");
-        logger.infof("DIAG: userSession.state=%s", userSession.getState());
-        logger.infof("DIAG: userSession.started=%d", userSession.getStarted());
-        logger.infof("DIAG: userSession.lastRefresh=%d", userSession.getLastSessionRefresh());
-        logger.infof("DIAG: clientSession.timestamp=%d", clientSession.getTimestamp());
-        logger.infof("DIAG: realm.idleTimeout=%d maxLifespan=%d", realm.getSsoSessionIdleTimeout(), realm.getSsoSessionMaxLifespan());
 
 // Manual checks exactly like KC (seconds arithmetic)
         boolean startedOk = (userSession.getStarted() + realm.getSsoSessionMaxLifespan()) > now;
@@ -271,48 +259,13 @@ public class TokenIssuer {
         boolean stateOk = (userSession.getState() == UserSessionModel.State.LOGGED_IN);
         boolean realmMatch = userSession.getRealm() == realm || (userSession.getRealm() != null && userSession.getRealm().getId().equals(realm.getId()));
 
-        logger.infof("DIAG: startedOk=%b (started + max=%d > now=%d)", startedOk,
-                userSession.getStarted() + realm.getSsoSessionMaxLifespan(), now);
-        logger.infof("DIAG: refreshOk=%b (lastRefresh + idle=%d > now=%d)", refreshOk,
-                userSession.getLastSessionRefresh() + realm.getSsoSessionIdleTimeout(), now);
-        logger.infof("DIAG: stateOk=%b realmMatch=%b", stateOk, realmMatch);
-
-// List authenticated client sessions related info (helpful)
-        try {
-            Map<String, AuthenticatedClientSessionModel> sessionsMap =
-                    userSession.getAuthenticatedClientSessions();
-
-            logger.infof("DIAG: authenticated client sessions count = %d", sessionsMap.size());
-
-             Collection<AuthenticatedClientSessionModel> found =
-                    sessionsMap.values();
-            for ( AuthenticatedClientSessionModel authenticatedClientSessionModel : found) {
-                logger.info(authenticatedClientSessionModel.toString());
-                logger.info("Client "+authenticatedClientSessionModel.getId());
-                logger.info("Client user session id"+authenticatedClientSessionModel.getUserSession().getId());
-                logger.info("Client user session state"+authenticatedClientSessionModel.getUserSession().getState());
-                logger.info("Client user session persistent state: "+authenticatedClientSessionModel.getUserSession().getPersistenceState());
-                UserSessionModel thisSession = authenticatedClientSessionModel.getUserSession();
-                logger.info("Client user session validity: "+AuthenticationManager.isSessionValid(realm,thisSession));
-            }
 
 
-        } catch (Exception x) {
-            logger.info("DIAG: error listing client sessions: " + x.getMessage());
-        }
-        logger.infof("DIAG: is session Persistent? "+userSession.getPersistenceState());
-        userSession.getStarted();
+
 // 7) Pull signed token strings directly
         String accessToken = response.getToken();        // access_token (encoded JWT)
         String idToken = response.getIdToken();         // id_token (encoded JWT)
         String refreshTokenString = response.getRefreshToken(); // refresh_token (encoded JWT or opaque)
-       logger.info("Refresh token: "+refreshTokenString);
-
-        logger.infof("Is ClientSession Valid? "+AuthenticationManager.isClientSessionValid(realm,client,userSession, clientSession));
-        logger.info("Is SSO Authentication? "+ AuthenticationManager.isSSOAuthentication(clientSession));
-
-        logger.info("Is session valid? "+ AuthenticationManager.isSessionValid(realm,userSession));
-
 
         return new IssuedTokens(accessToken, idToken, refreshTokenString);
 

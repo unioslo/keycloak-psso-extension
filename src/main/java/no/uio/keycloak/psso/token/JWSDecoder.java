@@ -1,5 +1,5 @@
 /* Copyright 2025 University of Oslo, Norway
- # This file is part of Cerebrum.
+ # This file is part of the Keycloak Platform SSO Extension codebase.
  #
  # This extension for Keycloak is free software; you can redistribute
  # it and/or modify it under the terms of the GNU General Public License
@@ -18,7 +18,6 @@
 
 package no.uio.keycloak.psso.token;
 
-import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jwt.SignedJWT;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.JWSVerifier;
@@ -36,14 +35,16 @@ import jakarta.persistence.EntityManager;
 import no.uio.keycloak.psso.Device;
 import no.uio.keycloak.psso.UserPSSOCredentialData;
 import no.uio.keycloak.psso.UserPSSOCredentialModel;
-import org.bouncycastle.util.test.FixedSecureRandom;
 import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.credential.CredentialModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.UserModel;
 
-
+/**
+ * @author <a href="mailto:franciaa@uio.no">Francis Augusto Medeiros-Logeay</a>
+ * @version $Revision: 1 $
+ */
 public class JWSDecoder {
     private  static Logger logger = Logger.getLogger(JWSDecoder.class);
     private final KeycloakSession session;
