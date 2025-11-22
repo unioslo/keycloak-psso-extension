@@ -40,7 +40,12 @@ You can check the SSO Extension here: https://github.com/unioslo/weblogin-mac-ss
 
 ## Documentation
 
-We haven't documented this throughly yet, but you can find a bit of explanation about the endpoints on this article: https://francisaugusto.com/2025/Platform_single_sign_on_diy/
+We haven't documented this extension throughly yet, but you can find a bit of explanation about the endpoints on this article: https://francisaugusto.com/2025/Platform_single_sign_on_diy/
+
+
+## Discussions
+
+It would be very nice if other developers could join our efforts, especially when it comes to the SSO Extension and its processing of SAML flows. If you can and want to help, send PR’s our way or drop as a line on the #Keycloak channel at the MacAdmins [Slack](https://macadmins.slack.com/archives/C09UKEDGBEH) 
 
 
 ## Acknowledgement
