@@ -38,6 +38,11 @@ We also developed a companion SSO Extension called _Weblogin SSO_, which is a bi
 You can check the SSO Extension here: https://github.com/unioslo/weblogin-mac-sso-extension
 
 
+## Documentation
+
+We haven't documented this throughly yet, but you can find a bit of explanation about the endpoints on this article: https://francisaugusto.com/2025/Platform_single_sign_on_diy/
+
+
 ## Acknowledgement
 
 Thanks to Timothy Perfitt from [Twocanoes](https://twocanoes.com) for the inspiration provided with their tutorials and code regarding SSO Extensions. His [psso-server-go](https://github.com/twocanoes/psso-server-go) was particularly useful to understand a few concepts regarding user and device registration.
