@@ -74,7 +74,16 @@ public class PSSOAuthenticatorFactory implements AuthenticatorFactory, Configura
     }
 
     private static final List<ProviderConfigProperty> configProperties = new ArrayList<ProviderConfigProperty>();
-
+    static {
+        ProviderConfigProperty property;
+        property = new ProviderConfigProperty();
+        property.setName("ignore_force_auth");
+        property.setLabel("Ignore force authentication request");
+        property.setType(ProviderConfigProperty.BOOLEAN_TYPE);
+        property.setDefaultValue("false");
+        property.setHelpText("Authenticate the user regardless of a reauthentication request.");
+        configProperties.add(property);
+    }
 
     @Override
     public String getHelpText() {

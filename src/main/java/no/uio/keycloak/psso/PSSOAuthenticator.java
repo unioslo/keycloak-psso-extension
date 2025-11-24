@@ -26,10 +26,16 @@ import jakarta.ws.rs.core.Response;
 import no.uio.keycloak.psso.token.RefreshTokenValidator;
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.*;
+import org.keycloak.authentication.authenticators.util.AcrStore;
+import org.keycloak.authentication.authenticators.util.AuthenticatorUtils;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.*;
+import org.keycloak.organization.protocol.mappers.oidc.OrganizationScope;
+import org.keycloak.organization.utils.Organizations;
+import org.keycloak.protocol.LoginProtocol;
 import org.keycloak.representations.RefreshToken;
 import org.keycloak.services.managers.AuthenticationManager;
+import org.keycloak.services.messages.Messages;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
 import java.nio.charset.StandardCharsets;
@@ -59,17 +65,17 @@ public class PSSOAuthenticator  implements Authenticator {
             logger.error("Platform SSO: Error getting ip address from user");
         }
         String requestData = "IP Address: " + ip_address+ "User Agent: " + userAgent;
-
         if (pSssoHeader != null) {
+            logger.info("Platform SSO Authentication Request: " + requestData);
             pSssoHeader = pSssoHeader.replaceFirst("^[Bb]earer\\s+", "");
             String ssoIdB64;
             String sigB64;
             try {
-               String[] split = pSssoHeader.split("\\.");
-               ssoIdB64 = split[0];
-               sigB64 = split[1];
-            }catch (Exception e){
-                logger.error("Platform SSO: Wrong SSO header format. "+requestData);
+                String[] split = pSssoHeader.split("\\.");
+                ssoIdB64 = split[0];
+                sigB64 = split[1];
+            } catch (Exception e) {
+                logger.error("Platform SSO: Wrong SSO header format. " + requestData);
                 logger.error(e);
                 context.failure(AuthenticationFlowError.GENERIC_AUTHENTICATION_ERROR);
                 return;
@@ -85,56 +91,111 @@ public class PSSOAuthenticator  implements Authenticator {
             } catch (Exception e) {
 
                 logger.error("Platform SSO: Error parsing SSO Token. " + e.getMessage());
-                logger.error("Platform SSO: Authentication attempt failed. "+requestData);
+                logger.error("Platform SSO: Authentication attempt failed. " + requestData);
 
                 context.attempted();
                 return;
             }
             RealmModel realm = context.getRealm();
-           if (verifySignature(context, env, ssoIdB64, sigB64, signatureBytes)){
-               String refreshToken = env.get("refresh_token").asText();
+            if (verifySignature(context, env, ssoIdB64, sigB64, signatureBytes)) {
+                String refreshToken = env.get("refresh_token").asText();
 
-              // String username = env.get("username").asText();
+                // String username = env.get("username").asText();
 
-               String kid = env.get("kid").asText();
-               RefreshTokenValidator validator = new RefreshTokenValidator(context.getSession());
-               RefreshToken token = null;
+                String kid = env.get("kid").asText();
+                RefreshTokenValidator validator = new RefreshTokenValidator(context.getSession());
+                RefreshToken token = null;
 
-               try {
-                   token = validator.validate(refreshToken,"psso");
-               }catch (Exception e){
-                    logger.error("Platform SSO: Invalid refresh token: "+e+"   "+requestData);
+                try {
+                    token = validator.validate(refreshToken, "psso");
+                } catch (Exception e) {
+                    logger.error("Platform SSO: Invalid refresh token: " + e + "   " + requestData);
                     context.attempted();
-               }
+                }
 
-               if (token != null) {
-                   String username = token.getSubject();
-                   logger.info("Platform SSO: User " + username + " successfully authenticated with SSO Token. "+requestData);
-                   UserModel user = context.getSession().users().getUserByUsername(realm,username);
-                   context.setUser(user);
+                if (token != null) {
+                    String username = token.getSubject();
+                        UserModel user = context.getSession().users().getUserByUsername(realm, username);
+                    context.setUser(user);
 
-                   if (token.getSessionId() != null) {
-                       String sid = token.getSessionId();
-                       UserSessionModel existingSession = context.getSession().sessions().getUserSession(context.getRealm(), sid);
-                       AuthenticationSessionModel authSession = context.getAuthenticationSession();
+                    if (token.getSessionId() != null) {
+                        String sid = token.getSessionId();
+                        UserSessionModel existingSession = context.getSession().sessions().getUserSession(context.getRealm(), sid);
+                        AuthenticationSessionModel authSession = context.getAuthenticationSession();
                         ClientModel client = authSession.getClient();
                         AuthenticatedClientSessionModel clientSession;
 
-                       if (existingSession != null ) {
-                           // Force Keycloak to use this already-active session
-                           authSession.setAuthNote(AuthenticationManager.SSO_AUTH, "true");
-                           context.attachUserSession(existingSession);
+                        if (existingSession != null) {
+                            // 1. Attach session + user
+                            context.attachUserSession(existingSession);
+                            context.setUser(existingSession.getUser());
+                            AuthenticatorConfigModel config = context.getAuthenticatorConfig();
+                            boolean ignoreForceAuth = false;
+                            if (config != null) {
+                                ignoreForceAuth = Boolean.parseBoolean(config.getConfig().get("ignore_force_auth"));
+                            }
 
-                       }
+                            AcrStore acrStore = new AcrStore(context.getSession(), authSession);
+                            LoginProtocol protocol = context.getSession().getProvider(LoginProtocol.class, authSession.getProtocol());
 
-                   }
+                            // 2. Copy LoA MAP
+                            String loaMap = existingSession.getNote(Constants.LOA_MAP);
+                            authSession.setAuthNote(Constants.LOA_MAP, loaMap);
 
-                   logger.info("Platform SSO: User " + username + " successfully authenticated with SSO Token. "+requestData);
-                   context.success();
-                   return;
-               }
-           }
+                            // 3. Compute LoA levels
+                            String topLevelFlowId = context.getTopLevelFlow().getId();
+                            int requested = acrStore.getRequestedLevelOfAuthentication(context.getTopLevelFlow());
+                            int previous = acrStore.getHighestAuthenticatedLevelFromPreviousAuthentication(topLevelFlowId);
 
+                            // 4. Reauthentication required?
+                            if (!ignoreForceAuth && protocol.requireReauthentication(existingSession, authSession)) {
+                                acrStore.setLevelAuthenticatedToCurrentRequest(Constants.NO_LOA);
+                                authSession.setAuthNote(AuthenticationManager.FORCED_REAUTHENTICATION, "true");
+                                context.setForwardedInfoMessage(Messages.REAUTHENTICATE);
+                                context.attempted();
+                                return;
+                            }
+
+                            // 5. Step-up required?
+                            if (requested > previous) {
+                                acrStore.setLevelAuthenticatedToCurrentRequest(previous);
+                                if (authSession.getClientNote(Constants.KC_ACTION) != null) {
+                                    context.setForwardedInfoMessage(Messages.AUTHENTICATE_STRONG);
+                                }
+                                context.attempted();
+                                return;
+                            }
+
+                            // 6. SSO-only, no step-up needed
+                            acrStore.setLevelAuthenticatedToCurrentRequest(previous);
+                            authSession.setAuthNote(AuthenticationManager.SSO_AUTH, "true");
+
+                            AuthenticatorUtils.updateCompletedExecutions(
+                                    authSession, existingSession, context.getExecution().getId()
+                            );
+
+                            // 7. Final SUCCESS
+                            if (isOrganizationContext(context)) {
+                                logger.info("Platform SSO: Organization Context. Not authenticating the user.");
+                                // if re-authenticating in the scope of an organization, an organization must be resolved prior to authenticating the user
+                                context.attempted();
+                            } else {
+                                logger.info("Platform SSO: User " + username + " successfully authenticated with SSO Token. " + requestData);
+                                context.success();
+                            }
+                            return;
+                        } else {
+                            // No existing session → continue with normal flow
+                            context.attempted();
+                            return;
+                        }
+
+
+                    }
+
+            }
+
+        }
             context.attempted();
 
         }else {
@@ -297,4 +358,14 @@ public class PSSOAuthenticator  implements Authenticator {
     public void close() {
 
     }
+    private boolean isOrganizationContext(AuthenticationFlowContext context) {
+        KeycloakSession session = context.getSession();
+
+        if (Organizations.isEnabledAndOrganizationsPresent(session)) {
+            return OrganizationScope.valueOfScope(session) != null;
+        }
+
+        return false;
+    }
+
 }
