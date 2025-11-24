@@ -1,6 +1,6 @@
-# keycloak-psso-extension
+# Keycloak Platform Single Sign-on Extension
 
-This is a Keycloak extension that makes Keycloak compliant with [Apple Platform Single Sign-on for macOS](https://support.apple.com/en-ca/guide/deployment/dep7bbb05313/web).
+This is a Keycloak extension that makes it compliant with [Apple Platform Single Sign-on for macOS](https://support.apple.com/en-ca/guide/deployment/dep7bbb05313/web).
 
 ## Features
 
