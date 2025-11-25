@@ -64,7 +64,7 @@ public class PSSOAuthenticator  implements Authenticator {
         } catch (Exception e){
             logger.error("Platform SSO: Error getting ip address from user");
         }
-        String requestData = "IP Address: " + ip_address+ "User Agent: " + userAgent;
+        String requestData = "IP Address: " + ip_address+ " User Agent: " + userAgent;
         if (pSssoHeader != null) {
             logger.info("Platform SSO Authentication Request: " + requestData);
             pSssoHeader = pSssoHeader.replaceFirst("^[Bb]earer\\s+", "");
@@ -155,6 +155,8 @@ public class PSSOAuthenticator  implements Authenticator {
                                 context.attempted();
                                 return;
                             }
+
+
 
                             // 5. Step-up required?
                             if (requested > previous) {
