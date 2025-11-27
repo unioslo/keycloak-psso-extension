@@ -31,6 +31,7 @@ import org.keycloak.authentication.authenticators.util.AcrStore;
 import org.keycloak.authentication.authenticators.util.AuthenticatorUtils;
 import org.keycloak.common.util.Time;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
+import org.keycloak.credential.CredentialModel;
 import org.keycloak.models.*;
 import org.keycloak.organization.protocol.mappers.oidc.OrganizationScope;
 import org.keycloak.organization.utils.Organizations;
@@ -103,7 +104,37 @@ public class PSSOAuthenticator  implements Authenticator {
             if (verifySignature(context, env, ssoIdB64, sigB64, signatureBytes)) {
                 String refreshToken = env.get("refresh_token").asText();
 
-                // String username = env.get("username").asText();
+
+
+                String preferred_username = env.get("username").asText();
+
+                if (preferred_username != null && !preferred_username.isEmpty()) {
+                    String userKid = env.get("user_kid").asText();
+                    UserModel user = context.getSession().users().getUserByUsername(realm, preferred_username);
+                    if (user != null) {
+                        List<CredentialModel> credentials = user.credentialManager()
+                                .getStoredCredentialsByTypeStream(UserPSSOCredentialModel.TYPE)
+                                .toList();
+                        boolean foundCredential = false;
+                        for (CredentialModel credential : credentials) {
+                            UserPSSOCredentialData cd = UserPSSOCredentialModel.getCredentialData(credential);
+                            if (cd.getUserKeyId().equals(userKid)){
+                                foundCredential = true;
+                                break;
+                            }
+                        }
+                        if  (!foundCredential) {
+                            logger.info("Platform SSO: This user is not registered for Platform SSO. Aborting. User: "+preferred_username+" "+requestData);
+                            context.attempted();
+                            return;
+                        }
+
+                    }else {
+                        context.attempted();
+                        return;
+                    }
+
+                }
 
                 String kid = env.get("kid").asText();
                 RefreshTokenValidator validator = new RefreshTokenValidator(context.getSession());
