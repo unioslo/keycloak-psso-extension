@@ -30,7 +30,7 @@ import java.util.UUID;
 public class NonceService {
 
     private static final long NONCE_TTL_MS = 60_000; // 1 minute
-    private final Cache<String, NonceEntry> nonceCache;
+    private final Cache<String, String> nonceCache;
     private static final Logger logger = Logger.getLogger(NonceService.class);
 
     public NonceService(KeycloakSession session) {
@@ -41,33 +41,28 @@ public class NonceService {
     public String createNonce(String clientRequestId) {
         String nonce = UUID.randomUUID().toString();
         long expiresAt = System.currentTimeMillis() + NONCE_TTL_MS;
-
-        nonceCache.put(nonce, new NonceEntry(clientRequestId, expiresAt));
+        String value = clientRequestId+":"+expiresAt;
+        nonceCache.put(nonce, value);
         return nonce;
     }
 
     public boolean validateNonce(String nonce, String clientRequestId) {
-        NonceEntry entry = nonceCache.remove(nonce); // consume once
+        String entry = nonceCache.remove(nonce); // consume once
+        String[] parts = entry.split(":");
+        String savedClientRequestId = parts[0];
+        long expiresAt = Long.parseLong(parts[1]);
+
         logger.debug("Nonce to validate: " + nonce + ", client-request-id: " + clientRequestId + ", entry: " + entry);
 
-        logger.debug("Nonce entry expiresAt: " + entry.expiresAt);
+        logger.debug("Nonce entry expiresAt: " + expiresAt);
         logger.debug("Nonce entry now: " + System.currentTimeMillis());
 
-        if (System.currentTimeMillis() > entry.expiresAt) {
+        if (System.currentTimeMillis() > expiresAt) {
             logger.debug("Nonce expired");
             return false;
         }
         // Verify it matches the same client-request-id
-        return entry.clientRequestId.equals(clientRequestId);
+        return savedClientRequestId.equals(clientRequestId);
     }
-
-    private static class NonceEntry implements java.io.Serializable {
-        final String clientRequestId;
-        final long expiresAt;
-
-        NonceEntry(String clientRequestId, long expiresAt) {
-            this.clientRequestId = clientRequestId;
-            this.expiresAt = expiresAt;
-        }
-    }
+    
 }
