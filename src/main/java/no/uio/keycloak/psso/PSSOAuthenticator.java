@@ -68,6 +68,7 @@ public class PSSOAuthenticator  implements Authenticator {
         }
         String requestData = "IP Address: " + ip_address+ " User Agent: " + userAgent;
         if (pSssoHeader != null) {
+
             logger.info("Platform SSO Authentication Request: " + requestData);
             pSssoHeader = pSssoHeader.replaceFirst("^[Bb]earer\\s+", "");
             String ssoIdB64;
@@ -235,6 +236,10 @@ public class PSSOAuthenticator  implements Authenticator {
         if (formData.containsKey("signedtoken")){
 
             String pSssoHeader = formData.getFirst("signedtoken");
+            if (pSssoHeader.equals("none")){
+                context.attempted();
+                return;
+            }
             String ssoIdB64;
             String sigB64;
             try {
