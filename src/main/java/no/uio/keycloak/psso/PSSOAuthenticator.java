@@ -230,7 +230,9 @@ public class PSSOAuthenticator  implements Authenticator {
                             return;
                         } else {
                             // No existing session → continue with normal flow
-                            context.attempted();
+                            Response challenge = context.form()
+                                    .createForm("reauthentication.ftl");
+                            context.challenge(challenge);
                             return;
                         }
 
