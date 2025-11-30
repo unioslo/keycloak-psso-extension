@@ -220,10 +220,17 @@ public class PSSOAuthenticator  implements Authenticator {
 
                             // 7. Final SUCCESS
                             if (isOrganizationContext(context)) {
+
                                 logger.info("Platform SSO: Organization Context. Not authenticating the user.");
                                 // if re-authenticating in the scope of an organization, an organization must be resolved prior to authenticating the user
                                 context.attempted();
                             } else {
+                                int now = Time.currentTime();
+                                UserSessionModel offlineSession =  context.getSession().sessions().getOfflineUserSession(realm, token.getSessionId());
+                                // if it is offline session, refresh it
+                                if (offlineSession != null) {
+                                    offlineSession.setLastSessionRefresh(now);
+                                }
                                 logger.info("Platform SSO: User " + username + " successfully authenticated with SSO Token. " + requestData);
                                 context.success();
                             }
@@ -372,7 +379,11 @@ public class PSSOAuthenticator  implements Authenticator {
                                 context.attempted();
                             } else {
                                 int now = Time.currentTime();
-                                //existingSession.setLastSessionRefresh(now);
+                                UserSessionModel offlineSession =  context.getSession().sessions().getOfflineUserSession(realm, token.getSessionId());
+                                // if it is offline session, refresh it
+                                if (offlineSession != null) {
+                                    offlineSession.setLastSessionRefresh(now);
+                                }
                                 logger.info("Platform SSO: User " + username + " successfully reauthenticated with SSO Token. " + requestData);
                                 context.success();
                             }
