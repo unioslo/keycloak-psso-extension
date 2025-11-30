@@ -18,13 +18,28 @@
 
 package no.uio.keycloak.psso.token;
 
+import com.nimbusds.jose.crypto.impl.ECDSAProvider;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
+import org.keycloak.TokenVerifier;
+import org.keycloak.common.VerificationException;
 import org.keycloak.common.util.Time;
+import org.keycloak.crypto.KeyUse;
+import org.keycloak.crypto.KeyWrapper;
+import org.keycloak.jose.jws.JWSInput;
+import org.keycloak.jose.jws.JWSInputException;
+import org.keycloak.jose.jws.crypto.RSAProvider;
 import org.keycloak.models.*;
 import org.keycloak.representations.RefreshToken;
 
+import javax.crypto.Mac;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
+import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.security.PublicKey;
+import java.util.Base64;
 import java.util.Map;
 /**
  * @author <a href="mailto:franciaa@uio.no">Francis Augusto Medeiros-Logeay</a>
@@ -54,7 +69,8 @@ public class RefreshTokenValidator {
         // 1. Signature + parsing
         //
         try {
-            token = session.tokens().decode(refreshTokenString, RefreshToken.class);
+            token = verifyAndDecode(refreshTokenString);
+            //token = session.tokens().decode(refreshTokenString, RefreshToken.class);
         } catch (Exception e) {
             throw unauthorized("Invalid refresh token (signature/format)");
         }
@@ -128,7 +144,8 @@ public class RefreshTokenValidator {
         //
         // 6. Refresh tokens (session-bound): user session must exist
         //
-        String sid = token.getSessionState();
+        
+        String sid = token.getSessionId();
         if (sid == null) {
             throw unauthorized("Refresh token missing session_state");
         }
@@ -171,5 +188,131 @@ public class RefreshTokenValidator {
                 Response.status(Response.Status.UNAUTHORIZED)
                         .entity(Map.of("error", msg))
                         .build());
+    }
+
+    private RefreshToken verifyAndDecode(String refreshTokenString) {
+        final JWSInput jws;
+        try {
+            jws = new JWSInput(refreshTokenString);
+        } catch (JWSInputException e) {
+            throw unauthorized("Invalid refresh token (malformed)");
+        }
+
+        // === Extract header info ===
+        String kid = jws.getHeader().getKeyId();
+        String algRaw = jws.getHeader().getAlgorithm().name();   // e.g., "HS512", "RS256", ...
+
+        // === Normalize algorithm so Keycloak KeyManager understands it ===
+        String alg = switch (algRaw) {
+            case "RS256" -> org.keycloak.crypto.Algorithm.RS256;
+            case "RS384" -> org.keycloak.crypto.Algorithm.RS384;
+            case "RS512" -> org.keycloak.crypto.Algorithm.RS512;
+            case "ES256" -> org.keycloak.crypto.Algorithm.ES256;
+            case "ES384" -> org.keycloak.crypto.Algorithm.ES384;
+            case "ES512" -> org.keycloak.crypto.Algorithm.ES512;
+            case "HS256" -> org.keycloak.crypto.Algorithm.HS256;
+            case "HS384" -> org.keycloak.crypto.Algorithm.HS384;
+            case "HS512" -> org.keycloak.crypto.Algorithm.HS512;
+            default -> algRaw;
+        };
+
+        // === Determine correct realm from issuer ===
+        RealmModel tokenRealm = this.realm;
+        try {
+            RefreshToken partial = jws.readJsonContent(RefreshToken.class);
+            String iss = partial.getIssuer();
+            int last = iss.lastIndexOf('/');
+            if (last != -1 && last + 1 < iss.length()) {
+                String realmName = iss.substring(last + 1);
+                RealmModel fromIssuer = session.realms().getRealmByName(realmName);
+                if (fromIssuer != null) tokenRealm = fromIssuer;
+            }
+        } catch (Exception ignored) {}
+
+        // === Load key from KeyManager ===
+        KeyManager keyManager = session.keys();
+        KeyWrapper keyWrapper = null;
+
+        if (kid != null) {
+            try {
+                keyWrapper = keyManager.getKey(tokenRealm, kid, KeyUse.SIG, alg);
+            } catch (Exception ignored) {}
+        }
+
+        if (keyWrapper == null) {
+            try {
+                keyWrapper = keyManager.getActiveKey(tokenRealm, KeyUse.SIG, alg);
+            } catch (Exception ignored) {}
+        }
+
+        if (keyWrapper == null) {
+            throw unauthorized("Unable to locate key for verifying token (alg=" + algRaw + ")");
+        }
+
+        // --------------------------------------------------------------------
+        //                 CASE 1: HMAC-SIGNED TOKEN (HS256/384/512)
+        // --------------------------------------------------------------------
+        if (algRaw.startsWith("HS")) {
+            SecretKey secretKey = keyWrapper.getSecretKey();
+            if (secretKey == null) {
+                throw unauthorized("HS-signed refresh token but no secret key available");
+            }
+
+            String jwsSigningInput = jws.getEncodedHeader() + "." + jws.getEncodedContent();
+            String macAlg = switch (algRaw) {
+                case "HS256" -> "HmacSHA256";
+                case "HS384" -> "HmacSHA384";
+                case "HS512" -> "HmacSHA512";
+                default -> throw unauthorized("Unsupported HMAC alg: " + algRaw);
+            };
+
+            try {
+                Mac mac = Mac.getInstance(macAlg);
+                mac.init(secretKey);
+                byte[] computedSig = mac.doFinal(jwsSigningInput.getBytes(StandardCharsets.US_ASCII));
+
+                String expectedSig = base64UrlEncode(computedSig);
+                String actualSig = base64UrlEncode(jws.getSignature());
+
+                if (!expectedSig.equals(actualSig)) {
+                    throw unauthorized("Invalid refresh token (HMAC signature mismatch)");
+                }
+
+                // Signature OK → decode JSON
+                return jws.readJsonContent(RefreshToken.class);
+
+            } catch (WebApplicationException wae) {
+                throw wae;
+            } catch (Exception e) {
+                throw unauthorized("Invalid refresh token (HMAC verification error)");
+            }
+        }
+
+        // --------------------------------------------------------------------
+        //              CASE 2: ASYMMETRIC-SIGNED TOKEN (RS / ES)
+        // --------------------------------------------------------------------
+        PublicKey publicKey = (PublicKey) keyWrapper.getPublicKey();
+        if (publicKey == null) {
+            throw unauthorized("Asymmetric token but no public key available");
+        }
+
+        try {
+            TokenVerifier<RefreshToken> verifier =
+                    TokenVerifier.create(refreshTokenString, RefreshToken.class)
+                            .publicKey(publicKey)
+                            .withDefaultChecks(); // exp, nbf, iss
+
+            verifier.verify();
+            return verifier.getToken();
+
+        } catch (VerificationException ve) {
+            throw unauthorized("Invalid refresh token (signature/claims)");
+        } catch (Exception e) {
+            throw unauthorized("Invalid refresh token (parsing)");
+        }
+    }
+
+    private static String base64UrlEncode(byte[] b) {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(b);
     }
 }
