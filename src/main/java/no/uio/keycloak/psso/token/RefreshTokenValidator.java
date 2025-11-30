@@ -77,9 +77,12 @@ public class RefreshTokenValidator {
         //
         // 3. Expiration (Keycloak does NOT check this automatically)
         //
-        if (token.getExp() > 0 &&
-                token.getExp() < Time.currentTime()) {
-            throw unauthorized("Refresh token expired");
+
+        if (isRefresh || (isOffline && token.getExp() != null)) {
+            if (token.getExp() > 0 &&
+                    token.getExp() < Time.currentTime()) {
+                throw unauthorized("Refresh token expired");
+            }
         }
 
         //

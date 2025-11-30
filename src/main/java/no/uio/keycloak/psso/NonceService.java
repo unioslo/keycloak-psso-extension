@@ -49,9 +49,19 @@ public class NonceService {
     public boolean validateNonce(String nonce, String clientRequestId) {
         String entry = nonceCache.remove(nonce); // consume once
         String[] parts = entry.split(":");
-        String savedClientRequestId = parts[0];
-        long expiresAt = Long.parseLong(parts[1]);
 
+        if  (parts.length != 2) {
+            return false;
+        }
+
+        String savedClientRequestId = parts[0];
+        long expiresAt;
+        try {
+            expiresAt = Long.parseLong(parts[1]);
+        }catch (NumberFormatException e) {
+            logger.error("Unable to parse nonce from client request id " + savedClientRequestId);
+            return false;
+        }
         logger.debug("Nonce to validate: " + nonce + ", client-request-id: " + clientRequestId + ", entry: " + entry);
 
         logger.debug("Nonce entry expiresAt: " + expiresAt);
