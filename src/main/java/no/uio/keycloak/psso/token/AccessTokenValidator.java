@@ -26,10 +26,7 @@ import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.jose.jws.JWSInput;
 import org.keycloak.jose.jws.JWSInputException;
-import org.keycloak.models.KeyManager;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
-import org.keycloak.models.UserModel;
+import org.keycloak.models.*;
 import org.keycloak.representations.AccessToken;
 
 import javax.crypto.Mac;
@@ -118,6 +115,7 @@ public class AccessTokenValidator {
             }
 
             if (!audienceOk) {
+                logger.error("Token not issued for the client: " + expectedClient);
                 throw unauthorized("Token not issued for client " + expectedClient);
             }
         }
@@ -125,17 +123,19 @@ public class AccessTokenValidator {
         // 5. Check if the session is still active
         String sessionState = token.getSessionId();
         if (sessionState == null) {
+            logger.error("Session state not set");
             throw unauthorized("Token missing session state");
         }
 
-        var userSession = session.sessions().getUserSession(realm, sessionState);
-        if (userSession == null) {
+        if (session.sessions().getUserSession(realm, sessionState) == null && session.sessions().getOfflineUserSession(realm, sessionState) == null) {
+            logger.error("User session not found");
             throw unauthorized("User session expired or logged out");
         }
 
         // 6. Basic user check
         UserModel user = session.users().getUserById(realm, token.getSubject());
         if (user == null) {
+            logger.error("User not found");
             throw unauthorized("User does not exist");
         }
 

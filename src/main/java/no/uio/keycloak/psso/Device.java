@@ -41,9 +41,9 @@ import java.util.Objects;
 public class Device {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", length = 36, nullable = false, updatable = false)
-    private String id;
+    private Long id;
 
     @Column(name = "realm_id", length = 36, nullable = false)
     private String realmId;
@@ -85,7 +85,7 @@ public class Device {
 
     public Device() {}
 
-    public Device(String id, String realmId, String deviceUDID, String serialNumber,
+    public Device(Long id, String realmId, String deviceUDID, String serialNumber,
                   String category, String signingKey, String signingKeyId,  String encryptionKey,  String encryptionKeyId,
                   String keyExchangeKey, String registeredBy, long creationTime) {
         this.id = id;
@@ -103,8 +103,8 @@ public class Device {
     }
 
     // getters and setters
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
 
     public String getRealmId() { return realmId; }
     public void setRealmId(String realmId) { this.realmId = realmId; }

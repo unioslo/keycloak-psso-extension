@@ -36,7 +36,7 @@ public class DeviceEntityProvider implements JpaEntityProvider {
     // You can return null if you don't want Liquibase to create and update the DB schema.
     @Override
     public String getChangelogLocation() {
-        return "META-INF/device-entity-provider-changelog.xml";
+        return "META-INF/changelog/first-database-changelog.xml";
     }
 
     // Helper method, which will be used internally by Liquibase.
