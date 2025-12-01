@@ -36,6 +36,7 @@ import org.keycloak.sessions.RootAuthenticationSessionModel;
 import org.keycloak.common.util.Time;
 
 
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -241,8 +242,8 @@ public class TokenIssuer {
             logger.errorf("TokenManager response entity is null.");
             throw new IllegalStateException("TokenManager returned empty response entity");
         }
-
-        long exp = calculateRefreshTokenExpiresIn(realm,client,userSession);
+        boolean isOffline = refreshTokenObject.getType().equals("Offline");
+        long exp = calculateRefreshTokenExpiresIn(realm,client,userSession,isOffline);
         response.setRefreshExpiresIn((int) exp);
         this.refreshExpiresIn = exp;
         this.expiresIn = realm.getAccessTokenLifespan();
@@ -266,14 +267,13 @@ public class TokenIssuer {
         String accessToken = response.getToken();        // access_token (encoded JWT)
         String idToken = response.getIdToken();         // id_token (encoded JWT)
         String refreshTokenString = response.getRefreshToken(); // refresh_token (encoded JWT or opaque)
-
         return new IssuedTokens(accessToken, idToken, refreshTokenString);
 
     }
 
     private long calculateRefreshTokenExpiresIn(RealmModel realm,
                                                 ClientModel client,
-                                                UserSessionModel userSession) {
+                                                UserSessionModel userSession, boolean isOffline) {
 
         final long now = Time.currentTime();
 
@@ -281,6 +281,7 @@ public class TokenIssuer {
         long maxLifespan = Math.max(realm.getSsoSessionMaxLifespanRememberMe(), realm.getSsoSessionMaxLifespan());
 
         long idleTimeout = Math.max(realm.getSsoSessionIdleTimeout(), realm.getSsoSessionIdleTimeoutRememberMe());
+
 
 
         String clientMax = client.getAttribute("client.session.max.lifespan");
@@ -298,6 +299,21 @@ public class TokenIssuer {
                 if (v > 0) idleTimeout = v;
             } catch (NumberFormatException ignored) {}
         }
+
+
+        if (isOffline){
+            maxLifespan = realm.getOfflineSessionMaxLifespan();
+            idleTimeout = realm.getOfflineSessionIdleTimeout();
+            clientIdle = client.getAttribute("client.offline.session.idle.timeout");
+            if  (clientIdle != null && !clientIdle.isEmpty()) {
+                try {
+                    long v = Long.parseLong(clientIdle);
+                    if (v > 0) idleTimeout = v;
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
+
 
         // ---- Expiration timestamps ----
 

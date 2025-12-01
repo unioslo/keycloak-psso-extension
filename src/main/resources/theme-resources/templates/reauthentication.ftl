@@ -18,6 +18,11 @@ ${msg("loginTitle",realm.name)}
     function pssoStepUp() {
        // const challenge = document.getElementById("challenge").value;
 
+        function cleanup() {
+            // make the functions inert
+            window.pssoSigned = function() {};
+            window.pssoStepUp = function() {};
+        }
         // Send message to native SSO extension
         window.webkit.messageHandlers.pssoStepUp.postMessage({
             type: "getSignedToken",
@@ -28,6 +33,8 @@ ${msg("loginTitle",realm.name)}
     function pssoSigned(signedToken) {
         document.getElementById("signedtoken").value = signedToken;
         document.getElementById("stepupForm").submit();
+        cleanup();                                // 🟢 cleanup before submit
+
     }
 </script>
 </#if>

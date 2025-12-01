@@ -38,6 +38,7 @@ import org.keycloak.organization.utils.Organizations;
 import org.keycloak.protocol.LoginProtocol;
 import org.keycloak.representations.RefreshToken;
 import org.keycloak.services.managers.AuthenticationManager;
+import org.keycloak.services.managers.UserSessionManager;
 import org.keycloak.services.messages.Messages;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
@@ -156,11 +157,14 @@ public class PSSOAuthenticator  implements Authenticator {
                     context.setUser(user);
 
                     if (token.getSessionId() != null) {
+
                         String sid = token.getSessionId();
                         UserSessionModel existingSession = context.getSession().sessions().getUserSession(context.getRealm(), sid);
                         AuthenticationSessionModel authSession = context.getAuthenticationSession();
                         ClientModel client = authSession.getClient();
                         AuthenticatedClientSessionModel clientSession;
+                        boolean isOffline = "Offline".equals(token.getType());
+
 
                         if (existingSession != null) {
                             // 1. Attach session + user
@@ -172,17 +176,11 @@ public class PSSOAuthenticator  implements Authenticator {
                                 ignoreForceAuth = Boolean.parseBoolean(config.getConfig().get("ignore_force_auth"));
                             }
 
-                            AcrStore acrStore = new AcrStore(context.getSession(), authSession);
                             LoginProtocol protocol = context.getSession().getProvider(LoginProtocol.class, authSession.getProtocol());
 
                             // 2. Copy LoA MAP
-                            String loaMap = existingSession.getNote(Constants.LOA_MAP);
-                            authSession.setAuthNote(Constants.LOA_MAP, loaMap);
 
                             // 3. Compute LoA levels
-                            String topLevelFlowId = context.getTopLevelFlow().getId();
-                            int requested = acrStore.getRequestedLevelOfAuthentication(context.getTopLevelFlow());
-                            int previous = acrStore.getHighestAuthenticatedLevelFromPreviousAuthentication(topLevelFlowId);
 
                             // 4. Reauthentication required?
                             if (!ignoreForceAuth && protocol.requireReauthentication(existingSession, authSession)) {
@@ -199,24 +197,10 @@ public class PSSOAuthenticator  implements Authenticator {
                                 //context.attempted();
                                 return;
                             }
-
-                            // 5. Step-up required?
-                            if (requested > previous) {
-                                acrStore.setLevelAuthenticatedToCurrentRequest(previous);
-                                if (authSession.getClientNote(Constants.KC_ACTION) != null) {
-                                    context.setForwardedInfoMessage(Messages.AUTHENTICATE_STRONG);
-                                }
+                            if (hasLoA(context, authSession,existingSession)) {
                                 context.attempted();
                                 return;
                             }
-
-                            // 6. SSO-only, no step-up needed
-                            acrStore.setLevelAuthenticatedToCurrentRequest(previous);
-                            authSession.setAuthNote(AuthenticationManager.SSO_AUTH, "true");
-
-                            AuthenticatorUtils.updateCompletedExecutions(
-                                    authSession, existingSession, context.getExecution().getId()
-                            );
 
                             // 7. Final SUCCESS
                             if (isOrganizationContext(context)) {
@@ -236,7 +220,40 @@ public class PSSOAuthenticator  implements Authenticator {
                             }
                             return;
                         } else {
+                            if (isOffline) {
+                                UserSessionModel offlineSession =  context.getSession().sessions().getOfflineUserSession(realm, token.getSessionId());
+                                // if it is offline session, refresh it
+                                if (offlineSession != null) {
+                                    int now = Time.currentTime();
+
+                                    offlineSession.setLastSessionRefresh(now);
+                                }
+
+                            }
                             // No existing session → continue with normal flow
+
+                            int now = Time.currentTime();
+                            UserSessionModel offlineSession =  context.getSession().sessions().getOfflineUserSession(realm, token.getSessionId());
+                            // if it is offline session, refresh it
+                            if (offlineSession != null) {
+                                String deviceUdid = offlineSession.getNote("psso.udid");
+                                offlineSession.setLastSessionRefresh(now);
+                                UserSessionModel newSession = getNewSession(context,deviceUdid,offlineSession);
+                                authSession.setAuthNote(AuthenticationManager.SSO_AUTH, "true");
+                                context.setUser(user);
+                                context.attachUserSession(newSession);
+
+                                if (hasLoA(context, authSession,newSession)) {
+                                    context.attempted();
+                                    return;
+                                }
+
+
+                                context.success();
+                                return;
+
+                            }
+
                             Response challenge = context.form()
                                     .createForm("reauthentication.ftl");
                             context.challenge(challenge);
@@ -340,36 +357,15 @@ public class PSSOAuthenticator  implements Authenticator {
                             context.attachUserSession(existingSession);
                             context.setUser(existingSession.getUser());
                             authSession.removeRequiredAction("psso-required-action");
-                            AcrStore acrStore = new AcrStore(context.getSession(), authSession);
                             LoginProtocol protocol = context.getSession().getProvider(LoginProtocol.class, authSession.getProtocol());
                             KeycloakSession session = context.getSession();
                             protocol.setSession(session);
 
                             // 2. Copy LoA MAP
-                            String loaMap = existingSession.getNote(Constants.LOA_MAP);
-                            authSession.setAuthNote(Constants.LOA_MAP, loaMap);
-
-                            // 3. Compute LoA levels
-                            String topLevelFlowId = context.getTopLevelFlow().getId();
-                            int requested = acrStore.getRequestedLevelOfAuthentication(context.getTopLevelFlow());
-                            int previous = acrStore.getHighestAuthenticatedLevelFromPreviousAuthentication(topLevelFlowId);
-                            if (requested > previous) {
-                                acrStore.setLevelAuthenticatedToCurrentRequest(previous);
-                                if (authSession.getClientNote(Constants.KC_ACTION) != null) {
-                                    context.setForwardedInfoMessage(Messages.AUTHENTICATE_STRONG);
-                                }
-                                logger.info("LoA prevented reauthentication");
+                            if (hasLoA(context, authSession,existingSession)) {
                                 context.attempted();
                                 return;
                             }
-
-                            // 6. SSO-only, no step-up needed
-                            acrStore.setLevelAuthenticatedToCurrentRequest(previous);
-                            authSession.setAuthNote(AuthenticationManager.SSO_AUTH, "true");
-
-                            AuthenticatorUtils.updateCompletedExecutions(
-                                    authSession, existingSession, context.getExecution().getId()
-                            );
 
 
                             // 7. Final SUCCESS
@@ -386,6 +382,7 @@ public class PSSOAuthenticator  implements Authenticator {
                                 }
                                 logger.info("Platform SSO: User " + username + " successfully reauthenticated with SSO Token. " + requestData);
                                 context.success();
+
                             }
                             return;
 
@@ -564,5 +561,55 @@ public class PSSOAuthenticator  implements Authenticator {
     }
 
 
+    private UserSessionModel getNewSession(AuthenticationFlowContext context, String deviceUDID, UserSessionModel offlineUserSession) {
+        String uuid = UUID.randomUUID().toString();
+        RealmModel realm = context.getRealm();
+        UserModel user = context.getUser();
+        KeycloakSession session = context.getSession();
+        String ip = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("X-Forwarded-For");
 
+        UserSessionManager userSessionManager = new UserSessionManager(session);
+
+        boolean rememberMe = realm.isRememberMe();
+        UserSessionModel userSession = userSessionManager.createUserSession(offlineUserSession.getId(), realm, user, user.getUsername(), ip, "psso", rememberMe, null, null, UserSessionModel.SessionPersistenceState.PERSISTENT);
+        ClientModel client = context.getSession().clients().getClientByClientId(realm, "psso");
+        AuthenticatedClientSessionModel clientSession = session.sessions().createClientSession(realm, client, userSession);
+        int nowSecs = Time.currentTime();
+
+        userSession.setNote("psso.udid", deviceUDID);
+        userSession.setLastSessionRefresh(nowSecs);
+        userSession.setState(UserSessionModel.State.LOGGED_IN);
+
+
+        clientSession.setProtocol("openid-connect");
+        return userSession;
+    }
+
+
+    public boolean hasLoA (AuthenticationFlowContext context, AuthenticationSessionModel authSession, UserSessionModel userSession) {
+
+
+        AcrStore acrStore = new AcrStore(context.getSession(), authSession);
+        LoginProtocol protocol = context.getSession().getProvider(LoginProtocol.class, authSession.getProtocol());
+
+        // 2. Copy LoA MAP
+        String loaMap = userSession.getNote(Constants.LOA_MAP);
+        authSession.setAuthNote(Constants.LOA_MAP, loaMap);
+
+        String topLevelFlowId = context.getTopLevelFlow().getId();
+        int requested = acrStore.getRequestedLevelOfAuthentication(context.getTopLevelFlow());
+        int previous = acrStore.getHighestAuthenticatedLevelFromPreviousAuthentication(topLevelFlowId);
+
+        // 5. Step-up required?
+        if (requested > previous) {
+            acrStore.setLevelAuthenticatedToCurrentRequest(previous);
+            if (authSession.getClientNote(Constants.KC_ACTION) != null) {
+                context.setForwardedInfoMessage(Messages.AUTHENTICATE_STRONG);
+            }
+            context.attempted();
+            return true;
+        }
+
+        return false;
+    }
 }
