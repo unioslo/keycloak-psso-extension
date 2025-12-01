@@ -38,7 +38,12 @@ You can check the SSO Extension here: https://github.com/unioslo/weblogin-mac-ss
 
 ## Documentation
 
-We haven't documented this extension throughly yet, but you can find a bit of explanation about the endpoints on this article: https://francisaugusto.com/2025/Platform_single_sign_on_diy/
+There is a small documentation on how to use this extension on 
+the wiki section of this repo: https://github.com/unioslo/keycloak-psso-extension/wiki
+
+You can also find a bit of explanation about the endpoints 
+on this article: https://francisaugusto.com/2025/Platform_single_sign_on_diy/ .
+The purpose of this article is mostly to help developers on how to adapt our SSO Extension or this extension.
 
 
 ## Discussions
