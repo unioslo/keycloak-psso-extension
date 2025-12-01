@@ -148,5 +148,6 @@
             <column name="encryption_key_id"/>
         </createIndex>
     </changeSet>
+    <include file="/META-INF/changelog/1-change-field-length.xml"/>
 
 </databaseChangeLog>

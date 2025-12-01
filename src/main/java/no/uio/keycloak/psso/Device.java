@@ -42,7 +42,7 @@ public class Device {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id", length = 36, nullable = false, updatable = false)
+    @Column(name = "id", nullable = false, updatable = false)
     private Long id;
 
     @Column(name = "realm_id", length = 36, nullable = false)
@@ -60,7 +60,7 @@ public class Device {
     @Lob
     @Column(name = "signing_key", nullable = false)
     private String signingKey;
-    @Lob
+
     @Column(name = "signing_key_id", nullable = false)
     private String signingKeyId;
 
@@ -68,11 +68,10 @@ public class Device {
     @Column(name = "encryption_key", nullable = false)
     private String encryptionKey;
 
-    @Lob
+
     @Column(name = "encryption_key_id", nullable = false)
     private String encryptionKeyId;
 
-    @Lob
     @Column(name = "registered_by", nullable = false)
     private String registeredBy;
 
