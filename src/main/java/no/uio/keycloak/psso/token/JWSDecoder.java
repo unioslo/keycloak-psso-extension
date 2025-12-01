@@ -174,6 +174,9 @@ public class JWSDecoder {
             }
         }
 
+        if (!user.getUsername().equals(jwt.getJWTClaimsSet().getSubject())) {
+            throw new Exception("The user on the assertion doesn't match the suer on the login request. User:  "+user.getUsername());
+        }
 
         String userKey = "";
         if (credentialData != null){
