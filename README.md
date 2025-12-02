@@ -10,6 +10,12 @@ This is a Keycloak extension that makes it compliant with [Apple Platform Single
 ![User registration is trated as a credential on Keycloak. The user (and administrators) can see and managem them.](https://github.com/user-attachments/assets/8d94bd8c-66a2-4cd3-ba9e-6f29a0254e54)
 
 
+## Requirements
+
+- Keycloak 26.4 or newer
+- Keycloak must use Postgresql or MariaDB for database. If you use something else, 
+please open an issue and we will try to implement it. Or add the scheme yourself to the changelog files.
+
 ## Known limitations
 
 - **Secure Enclave-only**: this extension only implements the Secure Enclave authentication method. 
