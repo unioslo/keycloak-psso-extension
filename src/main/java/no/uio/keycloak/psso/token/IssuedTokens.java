@@ -17,6 +17,10 @@
 */
 
 package no.uio.keycloak.psso.token;
+
+import org.keycloak.representations.IDToken;
+import org.keycloak.representations.RefreshToken;
+
 /**
  * @author <a href="mailto:franciaa@uio.no">Francis Augusto Medeiros-Logeay</a>
  * @version $Revision: 1 $
@@ -25,10 +29,15 @@ public class IssuedTokens {
     public final String accessToken;
     public final String idToken;
     public final String refreshToken;
+    public final IDToken idTokenObject;
+    public final RefreshToken refreshTokenObject;
 
-    public IssuedTokens(String accessToken, String idToken, String refreshToken) {
+    public IssuedTokens(String accessToken, String idToken, String refreshToken, IDToken idTokenObject, RefreshToken refreshTokenObject) {
         this.accessToken = accessToken;
         this.idToken = idToken;
         this.refreshToken = refreshToken;
+        this.idTokenObject = idTokenObject;
+        this.refreshTokenObject = refreshTokenObject;
+
     }
 }

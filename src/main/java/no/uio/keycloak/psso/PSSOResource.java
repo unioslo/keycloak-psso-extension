@@ -39,6 +39,7 @@ import org.keycloak.models.RealmModel;
 
 import org.keycloak.models.UserModel;
 import org.keycloak.representations.AccessToken;
+import org.keycloak.representations.RefreshToken;
 
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
@@ -379,7 +380,8 @@ public class PSSOResource {
         String jwe;
         ECPublicKey deviceKeyECPublicKey;
 
-        String refreshExpiresIn = String.valueOf(tokenIssuer.refreshExpiresIn);
+        RefreshToken refreshTokenObject = tokens.refreshTokenObject;
+        String refreshExpiresIn = refreshTokenObject.getType().equals("Offline") ? null : String.valueOf(tokenIssuer.refreshExpiresIn);
         String expiresIn = String.valueOf(tokenIssuer.expiresIn);
 
 

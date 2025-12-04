@@ -24,11 +24,11 @@ import jakarta.persistence.EntityManager;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
+import no.uio.keycloak.psso.token.IDTokenValidator;
 import no.uio.keycloak.psso.token.RefreshTokenValidator;
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.*;
 import org.keycloak.authentication.authenticators.util.AcrStore;
-import org.keycloak.authentication.authenticators.util.AuthenticatorUtils;
 import org.keycloak.common.util.Time;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.credential.CredentialModel;
@@ -36,6 +36,7 @@ import org.keycloak.models.*;
 import org.keycloak.organization.protocol.mappers.oidc.OrganizationScope;
 import org.keycloak.organization.utils.Organizations;
 import org.keycloak.protocol.LoginProtocol;
+import org.keycloak.representations.IDToken;
 import org.keycloak.representations.RefreshToken;
 import org.keycloak.services.managers.AuthenticationManager;
 import org.keycloak.services.managers.UserSessionManager;
@@ -103,8 +104,8 @@ public class PSSOAuthenticator  implements Authenticator {
             }
             RealmModel realm = context.getRealm();
             if (verifySignature(context, env, ssoIdB64, sigB64, signatureBytes)) {
-                String refreshToken = env.get("refresh_token").asText();
-
+                String tokenString = env.get("token").asText();
+                String tokenType = env.get("token_type").asText();
 
 
                 String preferred_username = env.get("username").asText();
@@ -119,18 +120,18 @@ public class PSSOAuthenticator  implements Authenticator {
                         boolean foundCredential = false;
                         for (CredentialModel credential : credentials) {
                             UserPSSOCredentialData cd = UserPSSOCredentialModel.getCredentialData(credential);
-                            if (cd.getUserKeyId().equals(userKid)){
+                            if (cd.getUserKeyId().equals(userKid)) {
                                 foundCredential = true;
                                 break;
                             }
                         }
-                        if  (!foundCredential) {
-                            logger.info("Platform SSO: This user is not registered for Platform SSO. Aborting. User: "+preferred_username+" "+requestData);
+                        if (!foundCredential) {
+                            logger.info("Platform SSO: This user is not registered for Platform SSO. Aborting. User: " + preferred_username + " " + requestData);
                             context.attempted();
                             return;
                         }
 
-                    }else {
+                    } else {
                         context.attempted();
                         return;
                     }
@@ -138,33 +139,62 @@ public class PSSOAuthenticator  implements Authenticator {
                 }
 
                 String kid = env.get("kid").asText();
-                RefreshTokenValidator validator = new RefreshTokenValidator(context.getSession());
-                RefreshToken token = null;
 
-                try {
-                    token = validator.validate(refreshToken, "psso");
-                } catch (Exception e) {
-                    logger.error("Platform SSO: Invalid refresh token: " + e + "   " + requestData);
-                    Response challenge = context.form()
-                            .createForm("reauthentication.ftl");
-                    context.challenge(challenge);
-                    return;
+
+                String username = null;
+                String sessionId = null;
+                KeycloakSession session = context.getSession();
+                IDToken idToken = null;
+                RefreshToken refreshToken = null;
+
+
+                switch (tokenType) {
+                    case "id_token" -> {
+                       IDTokenValidator validator = new IDTokenValidator(session);
+                        try {
+                                idToken = validator.validate(tokenString, "psso");
+                                username = idToken.getPreferredUsername();
+                                sessionId = idToken.getSessionId();
+
+                        } catch (Exception e) {
+                            logger.error("Platform SSO: Invalid refresh token: " + e + "   " + requestData);
+                            Response challenge = context.form()
+                                    .createForm("reauthentication.ftl");
+                            context.challenge(challenge);
+                            return;
+                        }
+
+                    }
+
+                    case "refresh_token" -> {
+                       RefreshTokenValidator validator = new RefreshTokenValidator(session);
+                        try {
+                                refreshToken = validator.validate(tokenString, "psso");
+                                username = refreshToken.getSubject();
+                                sessionId = refreshToken.getSessionId();
+
+                        } catch (Exception e) {
+                            logger.error("Platform SSO: Invalid refresh token: " + e + "   " + requestData);
+                            Response challenge = context.form()
+                                    .createForm("reauthentication.ftl");
+                            context.challenge(challenge);
+                            return;
+                        }
+                    }
                 }
 
-                if (token != null) {
-                    String username = token.getSubject();
+
+                if (refreshToken != null || idToken != null) {
                         UserModel user = context.getSession().users().getUserByUsername(realm, username);
                     context.setUser(user);
+                    if (sessionId != null) {
 
-                    if (token.getSessionId() != null) {
-
-                        String sid = token.getSessionId();
+                        String sid = sessionId;
                         UserSessionModel existingSession = context.getSession().sessions().getUserSession(context.getRealm(), sid);
                         AuthenticationSessionModel authSession = context.getAuthenticationSession();
                         ClientModel client = authSession.getClient();
                         AuthenticatedClientSessionModel clientSession;
-                        boolean isOffline = "Offline".equals(token.getType());
-
+                        boolean isOffline = context.getSession().sessions().getOfflineUserSession(realm, sid) != null;
 
                         if (existingSession != null) {
                             // 1. Attach session + user
@@ -187,7 +217,7 @@ public class PSSOAuthenticator  implements Authenticator {
                                // acrStore.setLevelAuthenticatedToCurrentRequest(Constants.NO_LOA);
                                 //authSession.setAuthNote(AuthenticationManager.FORCED_REAUTHENTICATION, "true");
                                 //context.setForwardedInfoMessage(Messages.REAUTHENTICATE);
-                                authSession.setAuthNote(AuthenticationManager.FORCED_REAUTHENTICATION, "false");
+                                //authSession.setAuthNote(AuthenticationManager.FORCED_REAUTHENTICATION, "false");
 
                                 logger.info("Platform SSO Reauthentication needed for user " + username+ " "+ requestData);
                                 Response challenge = context.form()
@@ -209,8 +239,10 @@ public class PSSOAuthenticator  implements Authenticator {
                                 // if re-authenticating in the scope of an organization, an organization must be resolved prior to authenticating the user
                                 context.attempted();
                             } else {
+                                authSession.setAuthNote(AuthenticationManager.SSO_AUTH, "true");
+
                                 int now = Time.currentTime();
-                                UserSessionModel offlineSession =  context.getSession().sessions().getOfflineUserSession(realm, token.getSessionId());
+                                UserSessionModel offlineSession =  context.getSession().sessions().getOfflineUserSession(realm, sid);
                                 // if it is offline session, refresh it
                                 if (offlineSession != null) {
                                     offlineSession.setLastSessionRefresh(now);
@@ -220,20 +252,9 @@ public class PSSOAuthenticator  implements Authenticator {
                             }
                             return;
                         } else {
-                            if (isOffline) {
-                                UserSessionModel offlineSession =  context.getSession().sessions().getOfflineUserSession(realm, token.getSessionId());
-                                // if it is offline session, refresh it
-                                if (offlineSession != null) {
-                                    int now = Time.currentTime();
-
-                                    offlineSession.setLastSessionRefresh(now);
-                                }
-
-                            }
-                            // No existing session → continue with normal flow
+                            UserSessionModel offlineSession =  context.getSession().sessions().getOfflineUserSession(realm, sid);
 
                             int now = Time.currentTime();
-                            UserSessionModel offlineSession =  context.getSession().sessions().getOfflineUserSession(realm, token.getSessionId());
                             // if it is offline session, refresh it
                             if (offlineSession != null) {
                                 String deviceUdid = offlineSession.getNote("psso.udid");
@@ -327,38 +348,73 @@ public class PSSOAuthenticator  implements Authenticator {
             }
             RealmModel realm = context.getRealm();
             if (verifySignature(context, env, ssoIdB64, sigB64, signatureBytes)) {
-                String refreshToken = env.get("refresh_token").asText();
+                String tokenString = env.get("token").asText();
+                String tokenType = env.get("token_type").asText();
 
                 // String username = env.get("username").asText();
 
                 String kid = env.get("kid").asText();
-                RefreshTokenValidator validator = new RefreshTokenValidator(context.getSession());
-                RefreshToken token = null;
+               // TokenValidator validator = TokenValidatorFactory.getValidator(tokenType, context.getSession());
 
-                try {
-                    token = validator.validate(refreshToken, "psso");
-                } catch (Exception e) {
-                    logger.error("Platform SSO: Invalid refresh token: " + e + "   " + requestData);
-                    context.attempted();
+                String username = null;
+                String sessionId = null;
+                KeycloakSession session = context.getSession();
+                IDToken idToken = null;
+                RefreshToken refreshToken = null;
+
+
+                switch (tokenType) {
+                    case "id_token" -> {
+                        IDTokenValidator validator = new IDTokenValidator(session);
+
+                        try {
+                            idToken = validator.validate(tokenString, "psso");
+                            username = idToken.getPreferredUsername();
+                            sessionId = idToken.getSessionId();
+
+                        } catch (Exception e) {
+                            logger.error("Platform SSO: Invalid ID token: " + e + "   " + requestData);
+                            context.attempted();
+                            return;
+                        }
+
+                    }
+
+                    case "refresh_token" -> {
+                       RefreshTokenValidator validator = new RefreshTokenValidator(session);
+
+                        try {
+                            refreshToken = validator.validate(tokenString, "psso");
+                            username = refreshToken.getSubject();
+                            sessionId = refreshToken.getSessionId();
+
+                        } catch (Exception e) {
+                            logger.error("Platform SSO: Invalid refresh token: " + e + "   " + requestData);
+                            context.attempted();
+                            return;
+                        }
+                    }
                 }
 
-                if (token != null) {
-                    String username = token.getSubject();
+                if (idToken != null || refreshToken != null) {
+
                     UserModel user = context.getSession().users().getUserByUsername(realm, username);
                     context.setUser(user);
 
-                    if (token.getSessionId() != null) {
-                        String sid = token.getSessionId();
+                    if (sessionId != null) {
+                        String sid = sessionId;
                         UserSessionModel existingSession = context.getSession().sessions().getUserSession(context.getRealm(), sid);
                         ClientModel client = authSession.getClient();
                         AuthenticatedClientSessionModel clientSession;
-                        if (existingSession != null) {
+                        boolean isOfflineSession = context.getSession().sessions().getOfflineUserSession(realm, sid) != null;
 
+
+                        if (existingSession != null) {
+                            logger.info("Platform SSO: Existing session not null");
                             context.attachUserSession(existingSession);
-                            context.setUser(existingSession.getUser());
+
                             authSession.removeRequiredAction("psso-required-action");
                             LoginProtocol protocol = context.getSession().getProvider(LoginProtocol.class, authSession.getProtocol());
-                            KeycloakSession session = context.getSession();
                             protocol.setSession(session);
 
                             // 2. Copy LoA MAP
@@ -375,11 +431,14 @@ public class PSSOAuthenticator  implements Authenticator {
                                 context.attempted();
                             } else {
                                 int now = Time.currentTime();
-                                UserSessionModel offlineSession =  context.getSession().sessions().getOfflineUserSession(realm, token.getSessionId());
+                                UserSessionModel offlineSession =  context.getSession().sessions().getOfflineUserSession(realm, sid);
                                 // if it is offline session, refresh it
                                 if (offlineSession != null) {
                                     offlineSession.setLastSessionRefresh(now);
                                 }
+                                authSession.setAuthNote(AuthenticationManager.FORCED_REAUTHENTICATION, "false");
+                                authSession.setAuthNote(AuthenticationManager.SSO_AUTH, "true");
+
                                 logger.info("Platform SSO: User " + username + " successfully reauthenticated with SSO Token. " + requestData);
                                 context.success();
 
@@ -401,6 +460,8 @@ public class PSSOAuthenticator  implements Authenticator {
 
         }
     }
+
+
 
     private boolean verifySignature(AuthenticationFlowContext context, JsonNode env, String ssoIdB64,  String sigB64,byte[]  signatureBytes) {
         String ip_address = "";

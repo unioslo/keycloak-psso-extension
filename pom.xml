@@ -118,7 +118,8 @@
                                          <include>com.auth0:java-jwt</include>
                                          <include>org.json:org.json</include>
                                           <include>com.nimbusds:nimbus-jose-jwt</include>
-                                          <include>org.bitbucket.b_c:jose4j</include>
+                                          <include>org.bitbucket.b_c:
+                                              jose4j</include>
                                       </includes>
                                    </artifactSet>
                                 </configuration>

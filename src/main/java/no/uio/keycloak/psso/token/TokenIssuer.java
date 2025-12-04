@@ -36,6 +36,7 @@ import org.keycloak.sessions.RootAuthenticationSessionModel;
 import org.keycloak.common.util.Time;
 
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -90,6 +91,7 @@ public class TokenIssuer {
         UserSessionModel userSession = null;
         AuthenticatedClientSessionModel clientSession = null;
 
+        // not really used right now - refresh flow doesn't work with Secure Enclave
         if (isRefresh && refreshToken.getType().equalsIgnoreCase("refresh")) {
             String sid = this.refreshToken.getSessionId();
             UserSessionModel existingUserSession = session.sessions().getUserSession(realm, sid);
@@ -175,10 +177,7 @@ public class TokenIssuer {
         }
 
         authSession.setAuthNote(AuthenticationManager.SSO_AUTH, "true");
-
-
         authSession.setProtocol("openid-connect");
-
         Set<ClientScopeModel> scopes = TokenManager.getRequestedClientScopes(
                 session,
                 scope,
@@ -222,7 +221,6 @@ public class TokenIssuer {
         refreshTokenObject.setPreferredUsername(user.getUsername());
 
 
-
         String issuer = token.getIssuer();
         if (issuer == null) {
             logger.warn("Issuer had to be generated. Check if your hostname is right.");
@@ -234,7 +232,6 @@ public class TokenIssuer {
                 refreshTokenObject.setOtherClaims("iss", newIssuer);
             }
         }
-
         AccessTokenResponse response = builder.build();
 
 
@@ -245,11 +242,11 @@ public class TokenIssuer {
         boolean isOffline = refreshTokenObject.getType().equals("Offline");
         long exp = calculateRefreshTokenExpiresIn(realm,client,userSession,isOffline);
         response.setRefreshExpiresIn((int) exp);
+
         this.refreshExpiresIn = exp;
-        this.expiresIn = realm.getAccessTokenLifespan();
+        this.expiresIn = client.getAttribute("access.token.lifespan") == null ? realm.getAccessTokenLifespan() : Long.parseLong(client.getAttribute("access.token.lifespan"))   ;
         TokenManager.attachAuthenticationSession(session, userSession,authSession);
         tm.transformAccessTokenResponse(session, response, userSession, clientCtx);
-
 
         int now = Time.currentTime(); // seconds in your KC version
 
@@ -262,13 +259,29 @@ public class TokenIssuer {
 
 
 
-
 // 7) Pull signed token strings directly
         String accessToken = response.getToken();        // access_token (encoded JWT)
         String idToken = response.getIdToken();         // id_token (encoded JWT)
         String refreshTokenString = response.getRefreshToken(); // refresh_token (encoded JWT or opaque)
-        return new IssuedTokens(accessToken, idToken, refreshTokenString);
+        IDTokenValidator idTokenValidator = new IDTokenValidator(session);
+        idTokenValidator.validate(idToken, "psso");
 
+        return new IssuedTokens(accessToken, idToken, refreshTokenString, token, refreshTokenObject);
+
+    }
+
+    private long calculateIdTokenExpiresIn(RealmModel realm, ClientModel client, UserSessionModel userSession) {
+        long idleTimeout = realm.getSsoSessionIdleTimeout();
+
+        String clientIdle = client.getAttribute("client.session.idle.timeout");
+        if (clientIdle != null && !clientIdle.isEmpty()) {
+            try {
+                long v = Long.parseLong(clientIdle);
+                if (v > 0) idleTimeout = v;
+            } catch (NumberFormatException ignored) {}
+        }
+
+        return idleTimeout;
     }
 
     private long calculateRefreshTokenExpiresIn(RealmModel realm,
