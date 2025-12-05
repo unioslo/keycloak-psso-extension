@@ -310,10 +310,12 @@ public class PSSOResource {
         }
         RealmModel realm = session.getContext().getRealm();
         String baseUrl = session.getContext().getUri().getBaseUri().toString();
+        baseUrl = baseUrl.replaceAll("/$", "");
         String realmName = realm.getName();
         String issuer = "psso";
         String audience = baseUrl + "/realms/" + realmName + "/" + issuer+"/token";
-        logger.debug("audience: " + audience);
+        logger.debug("The calculated assertion on my instance is: "+audience);
+        logger.debug("The audience on the assertion is: "+claims.get("aud"));
         try {
             AssertionValidator validator = new AssertionValidator(session);
             device = validator.validate(claims, device, audience,issuer, clientRequestId);
@@ -350,7 +352,11 @@ public class PSSOResource {
             String embeddedAssertions = claims.get("assertion").toString();
 
             try {
+
                 assertionClaims = jwsDecoder.parseEmbeddedAssertion(embeddedAssertions, user, deviceUDID);
+                AssertionValidator validator = new AssertionValidator(session);
+                validator.validateEmbeddedAssertion(claims,assertionClaims, user.getUsername());
+
             } catch (Exception e) {
                 logger.error("Error parsing the Embedded assertion: " + e.getMessage());
                 return Response.status(Response.Status.UNAUTHORIZED)

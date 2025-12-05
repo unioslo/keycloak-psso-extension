@@ -159,7 +159,7 @@ public class AssertionValidator {
         throw new IllegalArgumentException("Invalid type for " + claimName + ": " + value.getClass());
     }
 
-    public void validateEmbeddedAssertion(Map<String,Object> outer, Map<String,Object> inner) {
+    public void validateEmbeddedAssertion(Map<String,Object> outer, Map<String,Object> inner, String username) {
 
         // Both assertions must have same request_nonce
         if (!Objects.equals(outer.get("request_nonce"), inner.get("request_nonce"))) {
@@ -186,15 +186,25 @@ public class AssertionValidator {
         }
 
         // Same iss
-        if (!Objects.equals(outer.get("iss"), inner.get("iss"))) {
+        if (!Objects.equals(username, inner.get("iss"))) {
             logger.error("Invalid issuer: " + inner.get("iss"));
             throw new IllegalArgumentException("Embedded assertion iss mismatch");
         }
 
-        // Same aud
-        if (!Objects.equals(outer.get("aud"), inner.get("aud"))) {
-            logger.error("Invalid audience: " + inner.get("aud"));
-            throw new IllegalArgumentException("Embedded assertion aud mismatch");
+        Object audObj = inner.get("aud");
+        if (audObj instanceof String audStr) {
+            if (!audStr.equals("psso")) {
+                logger.error("Invalid audience: " + audStr);
+                throw new IllegalArgumentException("Invalid audience: " + audStr);
+            }
+        } else if (audObj instanceof List<?> audList) {
+            if (!audList.contains("psso")) {
+                logger.error("Audience list does not contain expected value.");
+                throw new IllegalArgumentException("Audience list does not contain expected value.");
+            }
+        } else {
+            logger.error("Invalid audience Type");
+            throw new IllegalArgumentException("Invalid audience type.");
         }
 
         // Check iat/exp fresh values

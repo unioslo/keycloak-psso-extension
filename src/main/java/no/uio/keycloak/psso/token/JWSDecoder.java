@@ -70,7 +70,7 @@ public class JWSDecoder {
             throw new IllegalArgumentException("Unexpected alg for embedded assertion: " + header.getAlgorithm());
         }
 
-        logger.infof("Platform SSO JWS kid: %s", kid);
+        logger.debugf("Platform SSO JWS kid: %s", kid);
 
         // --- 1) Load device by kid ---
         JpaConnectionProvider jpa = session.getProvider(JpaConnectionProvider.class);
@@ -175,7 +175,7 @@ public class JWSDecoder {
         }
 
         if (!user.getUsername().equals(jwt.getJWTClaimsSet().getSubject())) {
-            throw new Exception("The user on the assertion doesn't match the suer on the login request. User:  "+user.getUsername());
+            throw new Exception("The user on the assertion doesn't match the user on the login request. User:  "+user.getUsername());
         }
 
         String userKey = "";
