@@ -188,7 +188,7 @@ public class AssertionValidator {
         // Same iss
         if (!Objects.equals(username, inner.get("iss"))) {
             logger.error("Invalid issuer: " + inner.get("iss"));
-            throw new IllegalArgumentException("Embedded assertion iss mismatch");
+            throw new IllegalArgumentException("Wrong issuer of the embedded assertion");
         }
 
         Object audObj = inner.get("aud");

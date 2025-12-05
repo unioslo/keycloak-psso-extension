@@ -225,6 +225,7 @@ public class TokenIssuer {
         if (issuer == null) {
             logger.warn("Issuer had to be generated. Check if your hostname is right.");
             String baseUrl = session.getContext().getUri().getBaseUri().toString();
+            baseUrl = baseUrl.replaceAll("/$", "");
             String realmName = session.getContext().getRealm().getName();
             String newIssuer = baseUrl + "/realms/" + realmName;
             token.setOtherClaims("iss", newIssuer);
