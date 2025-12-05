@@ -44,7 +44,7 @@ public class IDTokenValidator{
 
     private final KeycloakSession session;
     private final RealmModel realm;
-    private final Logger logger = Logger.getLogger(AccessTokenValidator.class);
+    private final Logger logger = Logger.getLogger(IDTokenValidator.class);
 
     public IDTokenValidator(KeycloakSession session) {
         this.session = session;

@@ -103,40 +103,12 @@ public class PSSOAuthenticator  implements Authenticator {
                 return;
             }
             RealmModel realm = context.getRealm();
+            String preferred_username = env.get("username").asText();
+            String userKid = env.get("user_kid").asText();
+
             if (verifySignature(context, env, ssoIdB64, sigB64, signatureBytes)) {
                 String tokenString = env.get("token").asText();
                 String tokenType = env.get("token_type").asText();
-
-
-                String preferred_username = env.get("username").asText();
-
-                if (preferred_username != null && !preferred_username.isEmpty()) {
-                    String userKid = env.get("user_kid").asText();
-                    UserModel user = context.getSession().users().getUserByUsername(realm, preferred_username);
-                    if (user != null) {
-                        List<CredentialModel> credentials = user.credentialManager()
-                                .getStoredCredentialsByTypeStream(UserPSSOCredentialModel.TYPE)
-                                .toList();
-                        boolean foundCredential = false;
-                        for (CredentialModel credential : credentials) {
-                            UserPSSOCredentialData cd = UserPSSOCredentialModel.getCredentialData(credential);
-                            if (cd.getUserKeyId().equals(userKid)) {
-                                foundCredential = true;
-                                break;
-                            }
-                        }
-                        if (!foundCredential) {
-                            logger.info("Platform SSO: This user is not registered for Platform SSO. Aborting. User: " + preferred_username + " " + requestData);
-                            context.attempted();
-                            return;
-                        }
-
-                    } else {
-                        context.attempted();
-                        return;
-                    }
-
-                }
 
                 String kid = env.get("kid").asText();
 
@@ -183,6 +155,11 @@ public class PSSOAuthenticator  implements Authenticator {
                     }
                 }
 
+                if (username != null && !username.equals(preferred_username)) {
+                    logger.error("Platform SSO: Username and preferred_username don't match. Yser: " + username + " " + requestData);
+                    context.attempted();
+                    return;
+                }
 
                 if (refreshToken != null || idToken != null) {
                         UserModel user = context.getSession().users().getUserByUsername(realm, username);
@@ -476,6 +453,7 @@ public class PSSOAuthenticator  implements Authenticator {
 
 
         String username = env.get("username").asText();
+        String userKid =  env.get("user_kid").asText();
         String kid = env.get("kid").asText();
         long signedAt = env.get("signed_at").asLong();
 
@@ -505,6 +483,41 @@ public class PSSOAuthenticator  implements Authenticator {
             context.attempted();
             return  false;
         }
+
+            UserModel user = context.getSession().users().getUserByUsername(context.getRealm(), username);
+            if (user != null) {
+                List<CredentialModel> credentials = user.credentialManager()
+                        .getStoredCredentialsByTypeStream(UserPSSOCredentialModel.TYPE)
+                        .toList();
+                boolean foundCredential = false;
+                UserPSSOCredentialData cd = null;
+                for (CredentialModel credential : credentials) {
+                    cd = UserPSSOCredentialModel.getCredentialData(credential);
+                    if (cd.getUserKeyId().equals(userKid)) {
+                        foundCredential = true;
+                        break;
+                    }
+                }
+                if (!foundCredential) {
+                    logger.error("Platform SSO: This user is not registered for Platform SSO. Aborting. User: " + username + " " + requestData);
+                    context.attempted();
+                    return false;
+                }
+                if (cd.getDeviceUDID() == null || !cd.getDeviceUDID().equals(device.getDeviceUDID())) {
+                    logger.error("Plaform SSO: User and device mismatch. Aborting. User: "+username+" "+requestData);
+                    context.attempted();
+                }
+
+            } else {
+                context.attempted();
+                return false;
+            }
+
+
+
+
+
+
           String devicePublicKeyString = device.getSigningKey();
       //  logger.info("Platform SSO: Device public key: " + devicePublicKeyString);
         try {
