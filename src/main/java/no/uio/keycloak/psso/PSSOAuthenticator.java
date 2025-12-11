@@ -26,6 +26,7 @@ import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import no.uio.keycloak.psso.token.IDTokenValidator;
 import no.uio.keycloak.psso.token.RefreshTokenValidator;
+import org.infinispan.client.hotrod.configuration.AuthenticationConfiguration;
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.*;
 import org.keycloak.authentication.authenticators.util.AcrStore;
@@ -225,6 +226,17 @@ public class PSSOAuthenticator  implements Authenticator {
                                     offlineSession.setLastSessionRefresh(now);
                                 }
                                 logger.info("Platform SSO: User " + username + " successfully authenticated with SSO Token. " + requestData);
+                                if (config != null) {
+                                    if (config.getConfig().get("add_ms_amr") != null) {
+                                        boolean addAmr = Boolean.parseBoolean(config.getConfig().get("add_ms_amr"));
+                                        if (addAmr) {
+                                            authSession.setUserSessionNote("ms-authentication-method", "http://schemas.microsoft.com/ws/2008/06/identity/authenticationmethod/password");
+                                            authSession.setUserSessionNote("ms-authentication-method-references", "http://schemas.microsoft.com/claims/multipleauthn");
+
+                                        }
+                                    }
+                                }
+
                                 context.success();
                             }
                             return;
@@ -245,8 +257,17 @@ public class PSSOAuthenticator  implements Authenticator {
                                     context.attempted();
                                     return;
                                 }
+                                AuthenticatorConfigModel config = context.getAuthenticatorConfig();
+                                if (config != null) {
+                                    if (config.getConfig().get("add_ms_amr") != null) {
+                                        boolean addAmr = Boolean.parseBoolean(config.getConfig().get("add_ms_amr"));
+                                        if (addAmr) {
+                                            authSession.setUserSessionNote("ms-authentication-method", "http://schemas.microsoft.com/ws/2008/06/identity/authenticationmethod/password");
+                                            authSession.setUserSessionNote("ms-authentication-method-references", "http://schemas.microsoft.com/claims/multipleauthn");
 
-
+                                        }
+                                    }
+                                }
                                 context.success();
                                 return;
 
@@ -415,8 +436,19 @@ public class PSSOAuthenticator  implements Authenticator {
                                 }
                                 authSession.setAuthNote(AuthenticationManager.FORCED_REAUTHENTICATION, "false");
                                 authSession.setAuthNote(AuthenticationManager.SSO_AUTH, "true");
+                                if (config != null) {
+                                    if (config.getConfig().get("add_ms_amr") != null) {
+                                        boolean addAmr = Boolean.parseBoolean(config.getConfig().get("add_ms_amr"));
+                                        if (addAmr) {
+                                            authSession.setUserSessionNote("ms-authentication-method", "http://schemas.microsoft.com/ws/2008/06/identity/authenticationmethod/password");
+                                            authSession.setUserSessionNote("ms-authentication-method-references", "http://schemas.microsoft.com/claims/multipleauthn");
 
+                                        }
+                                    }
+                                }
+                                
                                 logger.info("Platform SSO: User " + username + " successfully reauthenticated with SSO Token. " + requestData);
+
                                 context.success();
 
                             }

@@ -85,6 +85,17 @@ public class PSSOAuthenticatorFactory implements AuthenticatorFactory, Configura
         configProperties.add(property);
     }
 
+    static {
+        ProviderConfigProperty property;
+        property = new ProviderConfigProperty();
+        property.setName("add_ms_amr");
+        property.setLabel("Add AMR data to the user session");
+        property.setType(ProviderConfigProperty.BOOLEAN_TYPE);
+        property.setDefaultValue("false");
+        property.setHelpText("Adds AMR data to the user session so that Entra ID doesn't ask for 2FA.");
+        configProperties.add(property);
+    }
+
     @Override
     public String getHelpText() {
         return "Platform SSO Authenticator. Allow authentication from registered macOS devices.";
