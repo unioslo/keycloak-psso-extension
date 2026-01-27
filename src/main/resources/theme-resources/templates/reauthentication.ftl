@@ -9,6 +9,8 @@ ${msg("loginTitle",realm.name)}
 <form id="stepupForm" class="${properties.kcFormClass!}" action="${url.loginAction}" method="post" >
 
     <input type="hidden" id="signedtoken" name="signedtoken" value="">
+    <input type="hidden" id="reauthenticate" name="reauthenticate" value="">
+
 </form>
 
 <script>
