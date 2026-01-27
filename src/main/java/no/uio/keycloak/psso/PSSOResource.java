@@ -21,6 +21,7 @@ import com.nimbusds.jose.JWEObject;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.util.Base64URL;
+import jakarta.transaction.Transactional;
 import no.uio.keycloak.psso.token.*;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.NoResultException;
@@ -40,6 +41,8 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.representations.AccessToken;
 import org.keycloak.representations.RefreshToken;
+import org.keycloak.services.managers.AppAuthManager;
+import org.keycloak.services.managers.AuthenticationManager;
 
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
@@ -116,7 +119,7 @@ public class PSSOResource {
         AccessToken token;
         try {
             token = new AccessTokenValidator(session)
-                    .validate(accessToken, "psso");   // expectedClient may be null if you don’t need it
+                    .validate(accessToken, "psso_admin");   // expectedClient may be null if you don’t need it
         }catch (Exception e) {
             logger.error("Error validating access token: " + e.getMessage());
             return Response.status(Response.Status.UNAUTHORIZED).build();
@@ -426,5 +429,162 @@ public class PSSOResource {
 
     }
 
+
+    @GET
+    @Path("/device")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getDevices(
+            @HeaderParam("Authorization") @DefaultValue("") String authorization
+
+    ) throws Exception {
+
+
+        String ip_address = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("X-Forwarded-For");
+        String userAgent = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("User-Agent");
+        logger.info("List of devices requested from: " + ip_address + ", User-Agent: " + userAgent);
+        AuthenticationManager.AuthResult authResult =
+                new AppAuthManager.BearerTokenAuthenticator(session)
+                        .authenticate();
+
+        if (authResult == null) {
+            logger.error("Platform SSO: Attempt to list devices failed. Authentication Failed");
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+
+        AccessToken token = authResult.getToken();
+
+        if ((token.getResourceAccess("psso-admin") == null) ||  !token.getResourceAccess("psso-admin")
+                .isUserInRole("mac-admin")) {
+            logger.error("Platform SSO: Attempt to list devices failed. Insufficient rights to do this.");
+
+            return Response.status(Response.Status.FORBIDDEN).build();
+        }
+        String username = token.getPreferredUsername();
+        // Verify if the device exists
+        JpaConnectionProvider jpa = session.getProvider(JpaConnectionProvider.class);
+        EntityManager em = jpa.getEntityManager();
+
+        List<Device> existingDevices = em.createNamedQuery("Device.findAll", Device.class)
+                .getResultList();
+        logger.info("Platform SSO: Device list queried by User: " + username + ". Returned " + existingDevices.size() + " devices.");
+
+        return Response.ok(existingDevices).build();
+
+    }
+
+    @GET
+    @Path("/device/{serial}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getDevice(
+            @HeaderParam("Authorization") @DefaultValue("") String authorization,
+            @PathParam("serial")  String serial
+
+    ) throws Exception {
+
+
+        String ip_address = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("X-Forwarded-For");
+        String userAgent = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("User-Agent");
+        logger.info("List of devices requested from: " + ip_address + ", User-Agent: " + userAgent);
+        AuthenticationManager.AuthResult authResult =
+                new AppAuthManager.BearerTokenAuthenticator(session)
+                        .authenticate();
+
+        if (authResult == null) {
+            logger.error("Platform SSO: Attempt to list devices failed. Authentication Failed");
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+
+        AccessToken token = authResult.getToken();
+
+        if ((token.getResourceAccess("psso-admin") == null) ||  !token.getResourceAccess("psso-admin")
+                .isUserInRole("mac-admin")) {
+            logger.error("Platform SSO: Attempt to list devices failed. Insufficient rights to do this.");
+
+            return Response.status(Response.Status.FORBIDDEN).build();
+        }
+
+        if (serial == null){
+            logger.error("Platform SSO: Attempt to query a device failed. No serial was sent.");
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+        String username = token.getPreferredUsername();
+        // Verify if the device exists
+        JpaConnectionProvider jpa = session.getProvider(JpaConnectionProvider.class);
+        EntityManager em = jpa.getEntityManager();
+        Device device;
+        try {
+            logger.info("Platform SSO: Device list queried by User: " + username + ". Serial number: " + serial);
+
+            device = em.createNamedQuery("Device.findBySerialNumber", Device.class)
+                    .setParameter("serialNumber", serial)
+                    .getSingleResult();
+        } catch (Exception e) {
+            logger.error("Platform SSO: Error finding device by serial number: " + serial+"- "+ e.getMessage());
+            return Response.status(Response.Status.NOT_FOUND)
+                    .type("application/platformsso-login-response+jwt")
+                    .build();
+        }
+        return Response.ok(device).build();
+
+    }
+    @DELETE
+    @Path("/device/{serial}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response deleteDevice(
+            @HeaderParam("Authorization") @DefaultValue("") String authorization,
+            @PathParam("serial")  String serial
+
+    ) throws Exception {
+
+
+        String ip_address = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("X-Forwarded-For");
+        String userAgent = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("User-Agent");
+        logger.info("Delete device requested from: " + ip_address + ", User-Agent: " + userAgent);
+        AuthenticationManager.AuthResult authResult =
+                new AppAuthManager.BearerTokenAuthenticator(session)
+                        .authenticate();
+
+        if (authResult == null) {
+            logger.error("Platform SSO: Attempt to delete device failed. Authentication Failed");
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+
+        AccessToken token = authResult.getToken();
+
+        if ((token.getResourceAccess("psso-admin") == null) ||  !token.getResourceAccess("psso-admin")
+                .isUserInRole("mac-admin")) {
+            logger.error("Platform SSO: Attempt to delete failed. Insufficient rights to do this.");
+
+            return Response.status(Response.Status.FORBIDDEN).build();
+        }
+
+        if (serial == null){
+            logger.error("Platform SSO: Attempt to delete a device failed. No serial was sent.");
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+        String username = token.getPreferredUsername();
+        // Verify if the device exists
+        JpaConnectionProvider jpa = session.getProvider(JpaConnectionProvider.class);
+        EntityManager em = jpa.getEntityManager();
+        Device device;
+        try {
+            logger.info("Platform SSO: Device deletion attempted  by User: " + username + ". Serial number: " + serial);
+
+            device = em.createNamedQuery("Device.findBySerialNumber", Device.class)
+                    .setParameter("serialNumber", serial)
+                    .getSingleResult();
+        } catch (Exception e) {
+            logger.error("Platform SSO: Error finding device by serial number: " + serial+"- "+ e.getMessage());
+            return Response.status(Response.Status.NOT_FOUND)
+                    .type("application/platformsso-login-response+jwt")
+                    .build();
+        }
+        em.remove(device);
+
+        logger.info("Platform SSO: Device deleted. Serial number: " + serial);
+
+        return Response.ok(device).build();
+
+    }
 
 }

@@ -24,6 +24,8 @@ import java.util.Objects;
 @Entity
 @Table(name = "psso_device")
 @NamedQueries({
+        @NamedQuery(name = "Device.findAll",
+                query = "SELECT d FROM Device d"),
         @NamedQuery(name = "Device.findByUDID",
                 query = "SELECT d FROM Device d WHERE d.deviceUDID = :udid"),
         @NamedQuery(name = "Device.findBySerialNumber",
