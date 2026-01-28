@@ -113,6 +113,14 @@
               				<goal>shade</goal>
             			</goals>
                                 <configuration>
+                                    <filters>
+                                        <filter>
+                                            <artifact>*:*</artifact>
+                                            <excludes>
+                                                <exclude>org/apache/commons/lang3/**</exclude>
+                                            </excludes>
+                                        </filter>
+                                    </filters>
                                    <artifactSet>
                                       <includes>
                                          <include>com.auth0:java-jwt</include>
