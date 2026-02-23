@@ -188,6 +188,7 @@ public class TokenIssuer {
         DefaultClientSessionContext clientCtx = DefaultClientSessionContext.fromClientSessionAndClientScopes(
                 clientSession,
                 scopes,
+                null,
                 session
         );
 
