@@ -119,7 +119,7 @@ public class PSSOResource {
         AccessToken token;
         try {
             token = new AccessTokenValidator(session)
-                    .validate(accessToken, "psso_admin");   // expectedClient may be null if you don’t need it
+                    .validate(accessToken, "psso");   // expectedClient may be null if you don’t need it
         }catch (Exception e) {
             logger.error("Error validating access token: " + e.getMessage());
             return Response.status(Response.Status.UNAUTHORIZED).build();

@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>no.uio.keycloak.psso</groupId>
-    <version>26.4.2</version>
+    <version>26.5.2</version>
     <name>Platform SSO for Keycloak</name>
 
     <properties>
