@@ -29,6 +29,7 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
 import no.uio.keycloak.psso.token.JWSDecoder;
 import org.jboss.logging.Logger;
+import org.keycloak.component.ComponentModel;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.credential.CredentialModel;
 import org.keycloak.events.EventBuilder;
@@ -43,6 +44,7 @@ import org.keycloak.representations.AccessToken;
 import org.keycloak.representations.RefreshToken;
 import org.keycloak.services.managers.AppAuthManager;
 import org.keycloak.services.managers.AuthenticationManager;
+import org.keycloak.services.ui.extend.UiTabProvider;
 
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
@@ -105,8 +107,24 @@ public class PSSOResource {
             ) throws Exception {
 
 
+        RealmModel realm = session.getContext().getRealm();
+        ComponentModel pssoConfig = realm.getComponentsStream(realm.getId(), UiTabProvider.class.getName())
+                .filter(c -> "Platform Single Sign-on".equals(c.getProviderId()))
+                .findFirst()
+                .orElse(null);
+
         String ip_address = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("X-Forwarded-For");
         String userAgent  = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("User-Agent");
+
+        if  (pssoConfig == null) {
+            logger.error("No PSSO configuration found for realm: " + realm.getId());
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
+        }
+
+        boolean registrationTokenRequired = pssoConfig.getConfig().getFirst("requireRegistrationToken").equals("true");
+        String savedRegistrationToken = pssoConfig.getConfig().getFirst("registrationToken");
+
+
 
         logger.info("Enroll device request. From: " + ip_address+ ", User-Agent: " + userAgent+" Client Request ID: "+clientRequestId);
         String deviceSigningKey = enrollmentRequest.DeviceSigningKey;
@@ -116,15 +134,28 @@ public class PSSOResource {
         List<String> attestationJsonB64Array = enrollmentRequest.attestation;
         String nonce = enrollmentRequest.nonce;
         String accessToken = enrollmentRequest.accessToken;
+        String registrationToken = enrollmentRequest.registrationToken;
         AccessToken token;
-        try {
-            token = new AccessTokenValidator(session)
-                    .validate(accessToken, "psso");   // expectedClient may be null if you don’t need it
-        }catch (Exception e) {
-            logger.error("Error validating access token: " + e.getMessage());
-            return Response.status(Response.Status.UNAUTHORIZED).build();
+
+        if (registrationTokenRequired && (savedRegistrationToken.isEmpty() || registrationToken == null || registrationToken.isEmpty() || !registrationToken.equals(savedRegistrationToken))) {
+            logger.error("Platform SSO: Registration token not saved, is empty or there is a wrong one.");
+            return Response.status(Response.Status.BAD_REQUEST).build();
         }
-        String registeredBy = token.getPreferredUsername();
+
+        String registeredBy;
+
+        if (registrationTokenRequired) {
+            registeredBy = "registrationToken";
+        } else {
+            try {
+                token = new AccessTokenValidator(session)
+                        .validate(accessToken, "psso");   // expectedClient may be null if you don’t need it
+            } catch (Exception e) {
+                logger.error("Platform SSO: Error validating access token: " + e.getMessage());
+                return Response.status(Response.Status.UNAUTHORIZED).build();
+            }
+            registeredBy = token.getPreferredUsername();
+        }
 
         SecureRandom random = new SecureRandom();
         byte[] keyExchangeKeyBytes = new byte[32];
@@ -451,7 +482,7 @@ public class PSSOResource {
             return Response.status(Response.Status.UNAUTHORIZED).build();
         }
 
-        AccessToken token = authResult.getToken();
+        AccessToken token = authResult.token();
 
         if ((token.getResourceAccess("psso-admin") == null) ||  !token.getResourceAccess("psso-admin")
                 .isUserInRole("mac-admin")) {
@@ -494,7 +525,7 @@ public class PSSOResource {
             return Response.status(Response.Status.UNAUTHORIZED).build();
         }
 
-        AccessToken token = authResult.getToken();
+        AccessToken token = authResult.token();
 
         if ((token.getResourceAccess("psso-admin") == null) ||  !token.getResourceAccess("psso-admin")
                 .isUserInRole("mac-admin")) {
@@ -549,7 +580,7 @@ public class PSSOResource {
             return Response.status(Response.Status.UNAUTHORIZED).build();
         }
 
-        AccessToken token = authResult.getToken();
+        AccessToken token = authResult.token();
 
         if ((token.getResourceAccess("psso-admin") == null) ||  !token.getResourceAccess("psso-admin")
                 .isUserInRole("mac-admin")) {

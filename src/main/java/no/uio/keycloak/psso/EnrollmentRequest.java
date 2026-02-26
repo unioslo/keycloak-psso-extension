@@ -32,4 +32,5 @@ public class EnrollmentRequest {
     public String nonce;
     public List<String> attestation;
     public String accessToken;
+    public String registrationToken;
 }

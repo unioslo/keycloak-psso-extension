@@ -12,9 +12,10 @@ This is a Keycloak extension that makes it compliant with [Apple Platform Single
 
 ## Requirements
 
-- Keycloak 26.4 or newer
+- Keycloak 26.5 or newer
 - Keycloak must use Postgresql or MariaDB for database. If you use something else, 
 please open an issue and we will try to implement it. Or add the scheme yourself to the changelog files.
+- The "Declarative-ui" feature of Keycloak needs to be enabled
 
 ## Known limitations
 
