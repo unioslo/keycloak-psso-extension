@@ -19,6 +19,7 @@
 package no.uio.keycloak.psso;
 
 
+import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.util.encoders.Hex;
 import org.jboss.logging.Logger;
@@ -66,7 +67,7 @@ public class AppleAttestationVerifier {
             // Step 1: Decode certificate chain
             List<X509Certificate> certChain = decodeCertChain(attestationCertsB64);
             if (certChain.isEmpty()) {
-                logger.warn("No certificates found in attestation chain");
+                logger.warn("Platform SSO: No certificates found in attestation chain");
                 return false;
             }
 
@@ -96,10 +97,10 @@ public class AppleAttestationVerifier {
             byte[] leafKeyBytes = extractRawECPoint(leafCert.getPublicKey());
             byte[] clientKeyBytes = decodeRawBase64Key(deviceSigningKeyB64);
             if (!Arrays.equals(leafKeyBytes, clientKeyBytes)) {
-                logger.error("Public key mismatch between attested cert and provided key");
+                logger.error("Platform SSO: Public key mismatch between attested cert and provided key");
                 return false;
             }
-            logger.debug("Public key matches device key");
+            logger.debug("Platform SSO: Public key matches device key");
 
             // Step 4: Compute expected nonce hash (raw nonce string → SHA-256)
             byte[] expectedNonceHash = MessageDigest.getInstance("SHA-256")
@@ -108,9 +109,8 @@ public class AppleAttestationVerifier {
 
             // Step 5: Extract nonce hash from OID 1.2.840.113635.100.8.11.1
             byte[] extValue = leafCert.getExtensionValue(NONCE_OID);
-            if (extValue == null || extValue.length != 34 || extValue[0] != 0x04 || extValue[1] != 0x20) {
-                logger.error("Freshness extension (1.2.840.113635.100.8.11.1) missing or malformed. Got: " +
-                        (extValue == null ? "null" : Hex.toHexString(extValue)));
+            if (extValue == null) {
+                logger.error("Freshness extension (1.2.840.113635.100.8.11.1) missing." );
                 return false;
             }
 
@@ -123,9 +123,8 @@ public class AppleAttestationVerifier {
                 return false;
             }
 
-            deviceAttestationObject.setSerial(Hex.toHexString(serial));
 
-            // Step 6: Extract serial number
+            // Step 7: Extract device UDID number
             byte[] deviceUDid = leafCert.getExtensionValue(DEVICE_UDID_OID);
             if (deviceUDid == null || deviceUDid[0] != 0x04) {
                 logger.error("DeviceUDID missing or malformed. Got: " +
@@ -133,8 +132,19 @@ public class AppleAttestationVerifier {
                 return false;
             }
 
-            String serialString = hexBytesToString(Arrays.copyOfRange(serial, 2, serial.length));
-            String deviceUDidString = hexBytesToString(Arrays.copyOfRange(deviceUDid, 2, deviceUDid.length));
+
+            ASN1OctetString octetStringUDID = ASN1OctetString.getInstance(deviceUDid);
+            ASN1OctetString octetStringSerial = ASN1OctetString.getInstance(serial);
+
+            byte[] rawBytesUDID = octetStringUDID.getOctets();
+            byte[] rawBytesSerial = octetStringSerial.getOctets();
+
+            String deviceUDidString = new String(rawBytesUDID, StandardCharsets.UTF_8);
+            String serialString = new String(rawBytesSerial, StandardCharsets.UTF_8);
+
+
+           // String serialString = hexBytesToString(Arrays.copyOfRange(serial, 2, serial.length));
+           // String deviceUDidString = hexBytesToString(Arrays.copyOfRange(deviceUDid, 2, deviceUDid.length));
 
             logger.debug("DeviceUDID: " + deviceUDidString);
             logger.debug("Serial: " + serialString);
@@ -142,21 +152,21 @@ public class AppleAttestationVerifier {
             deviceAttestationObject.setSerial(serialString);
             deviceAttestationObject.setDeviceUDid(deviceUDidString);
 
-            byte[] nonceInCert = Arrays.copyOfRange(extValue, 2, 34);
-
+            ASN1OctetString octetStringNonce = ASN1OctetString.getInstance(extValue);
+            byte[] nonceInCert = octetStringNonce.getOctets();
             logger.debug("Nonce hash from certificate: " + Hex.toHexString(nonceInCert));
 
             if (Arrays.equals(nonceInCert, expectedNonceHash)) {
-                logger.info("ALL CHECKS PASSED – Serial number: " + serialString + ", Device UDID: " + deviceUDidString + " successfully attested");
+                logger.info("Platform SSO: ALL CHECKS PASSED – Serial number: " + deviceUDidString + ", Device UDID: " + deviceUDidString + " successfully attested");
                 this.deviceAttestationObject = deviceAttestationObject;
                 return true;
             } else {
-                logger.error("Nonce mismatch! Device might be replaying old attestation.");
+                logger.error("Platform SSO: Nonce mismatch! Device might be replaying old attestation.");
                 return false;
             }
 
         } catch (Exception e) {
-            logger.error("Attestation verification failed", e);
+            logger.error("Platform SSO: Attestation verification failed", e);
             return false;
         }
     }
