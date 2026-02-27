@@ -117,12 +117,12 @@ public class PSSOResource {
         String userAgent  = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("User-Agent");
 
         if  (pssoConfig == null) {
-            logger.error("No PSSO configuration found for realm: " + realm.getId());
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
+            logger.error("No PSSO configuration found for realm: " + realm.getId()+". Consider enabling the Declarative UI feature.");
+          //  return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
         }
 
-        boolean registrationTokenRequired = pssoConfig.getConfig().getFirst("requireRegistrationToken").equals("true");
-        String savedRegistrationToken = pssoConfig.getConfig().getFirst("registrationToken");
+        boolean registrationTokenRequired = pssoConfig != null ? pssoConfig.getConfig().getFirst("requireRegistrationToken").equals("true") : false;
+        String savedRegistrationToken = pssoConfig != null ? pssoConfig.getConfig().getFirst("registrationToken") : "";
 
 
 
