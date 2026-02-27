@@ -44,11 +44,6 @@ public class PSSOConfiguration implements UiTabProvider, UiTabProviderFactory<Co
     public List<ProviderConfigProperty> getConfigProperties() {
         final ProviderConfigurationBuilder builder = ProviderConfigurationBuilder.create();
         builder.property()
-                .name("psso_options")
-                .label("Platform Single Sign-on options")
-                .type(ProviderConfigProperty.GROUP_TYPE)
-                .add()
-                .property()
                 .name("requireRegistrationToken")
                 .label("Require Registration Token")
                 .helpText("Require Registration Token for device registration. If not required, a user token will be required.")
