@@ -308,6 +308,9 @@ public class PSSOResource {
                           @FormParam("request") String requestParam /* older param name */,
                           @HeaderParam("client-request-id") String clientRequestId,
                           @Context HttpHeaders headers) {
+
+        logger.debug("Platform SSO: Received a request on /token endpoint");
+        logger.info("Platform SSO: Grant type on the token request: " + grantType);
         // 1) normalize param: assertion or request
         String jwsCompact = assertion != null ? assertion : requestParam;
 
@@ -317,7 +320,7 @@ public class PSSOResource {
         try {
             claims = jwsDecoder.parseAndVerify(jwsCompact);
             for(Map.Entry<String, Object> claim : claims.entrySet()) {
-                logger.debug(claim.getKey() + ": " + claim.getValue());
+                logger.info(claim.getKey() + ": " + claim.getValue());
             }
 
         } catch (Exception e) {
@@ -349,7 +352,6 @@ public class PSSOResource {
         String issuer = "psso";
         String audience = baseUrl + "/realms/" + realmName + "/" + issuer+"/token";
         logger.debug("The calculated assertion on my instance is: "+audience);
-        logger.debug("The audience on the assertion is: "+claims.get("aud"));
         try {
             AssertionValidator validator = new AssertionValidator(session);
             device = validator.validate(claims, device, audience,issuer, clientRequestId);
@@ -381,8 +383,8 @@ public class PSSOResource {
                 logger.error("Error validating refresh token: " + e.getMessage());
                 Response response = Response.status(Response.Status.UNAUTHORIZED).build();
             }
-        }else {
-            logger.info("Platform SSO: Token request received for user "+sub);
+        }else if (claims.get("grant_type").toString().equals("urn:ietf:params:oauth:grant-type:jwt-bearer")) {
+            logger.info("Platform SSO: Token request received for user "+sub+" with grant type: "+grantType);
             String embeddedAssertions = claims.get("assertion").toString();
 
             try {

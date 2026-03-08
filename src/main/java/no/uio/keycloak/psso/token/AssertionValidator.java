@@ -22,6 +22,9 @@ import no.uio.keycloak.psso.Device;
 import no.uio.keycloak.psso.NonceService;
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.UserCredentialModel;
+import org.keycloak.models.UserModel;
+
 
 import java.net.URL;
 import java.time.Instant;
@@ -75,7 +78,7 @@ public class AssertionValidator {
                 throw new IllegalArgumentException("Audience list does not contain expected value.");
             }
         } else {
-            logger.error("Invalid audience Type");
+            logger.error("Invalid audience: " + audObj);
             throw new IllegalArgumentException("Invalid audience type.");
         }
 
@@ -105,9 +108,20 @@ public class AssertionValidator {
 
         // ---- grant_type ----
         String grantType = (String) claims.get("grant_type");
-        if (!"urn:ietf:params:oauth:grant-type:jwt-bearer".equals(grantType) || "refresh_token".equals(grantType)) {
+        if (!"urn:ietf:params:oauth:grant-type:jwt-bearer".equals(grantType) && !"refresh_token".equals(grantType) && !grantType.equals("password")) {
             logger.error("Invalid grant type: " + grantType);
             throw new IllegalArgumentException("Invalid grant_type: " + grantType);
+        }
+
+        if (grantType.equals("password")) {
+            String password = (String) claims.get("password");
+            UserModel user = session.users().getUserByUsername(session.getContext().getRealm(), sub);
+            UserCredentialModel credential =
+                    UserCredentialModel.password(password);
+            if (password == null || password.isEmpty() || !user.credentialManager().isValid(credential)) {
+                logger.error("Invalid password.");
+                throw new IllegalArgumentException("Invalid password.");
+            }
         }
 
         // ---- request_nonce ----

@@ -39,22 +39,26 @@ public class NonceService {
     }
 
     public String createNonce(String clientRequestId) {
-        String nonce = UUID.randomUUID().toString();
+        String nonce = UUID.randomUUID().toString().toLowerCase();
         long expiresAt = System.currentTimeMillis() + NONCE_TTL_MS;
-        String value = clientRequestId+":"+expiresAt;
+        String value = clientRequestId.toLowerCase()+":"+expiresAt;
         nonceCache.put(nonce, value);
         return nonce;
     }
 
     public boolean validateNonce(String nonce, String clientRequestId) {
-        String entry = nonceCache.remove(nonce); // consume once
+        String entry = nonceCache.remove(nonce.toLowerCase()); // consume once
+        if (entry == null) {
+            logger.debug("Platform SSO: Nonce value not found: " + nonce);
+            return false;
+        }
         String[] parts = entry.split(":");
 
         if  (parts.length != 2) {
             return false;
         }
 
-        String savedClientRequestId = parts[0];
+        String savedClientRequestId = parts[0].toLowerCase();
         long expiresAt;
         try {
             expiresAt = Long.parseLong(parts[1]);
@@ -62,7 +66,7 @@ public class NonceService {
             logger.error("Unable to parse nonce from client request id " + savedClientRequestId);
             return false;
         }
-        logger.debug("Nonce to validate: " + nonce + ", client-request-id: " + clientRequestId + ", entry: " + entry);
+        logger.debug("Nonce to validate: " + nonce + ", client-request-id: " + clientRequestId.toLowerCase() + ", entry: " + entry);
 
         logger.debug("Nonce entry expiresAt: " + expiresAt);
         logger.debug("Nonce entry now: " + System.currentTimeMillis());
@@ -72,7 +76,7 @@ public class NonceService {
             return false;
         }
         // Verify it matches the same client-request-id
-        return savedClientRequestId.equals(clientRequestId);
+        return savedClientRequestId.equals(clientRequestId.toLowerCase());
     }
     
 }

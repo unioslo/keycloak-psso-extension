@@ -62,6 +62,7 @@ public class PSSOAuthenticator  implements Authenticator {
     public void authenticate(AuthenticationFlowContext context) {
         HttpHeaders headers = context.getHttpRequest().getHttpHeaders();
         String pSssoHeader = headers.getHeaderString("Platform-SSO-Authorization");
+        String clientId = headers.getHeaderString("client-id");
         String ip_address = "";
         String userAgent = "";
         try {
@@ -105,7 +106,6 @@ public class PSSOAuthenticator  implements Authenticator {
             }
             RealmModel realm = context.getRealm();
             String preferred_username = env.get("username").asText();
-            String userKid = env.get("user_kid").asText();
 
             if (verifySignature(context, env, ssoIdB64, sigB64, signatureBytes)) {
                 String tokenString = env.get("token").asText();
@@ -487,6 +487,19 @@ public class PSSOAuthenticator  implements Authenticator {
         String username = env.get("username").asText();
         String userKid =  env.get("user_kid").asText();
         String kid = env.get("kid").asText();
+        String nonce = env.get("nonce").asText();
+        String clientId = env.get("client_id").asText();
+        boolean isSecureEnclave = env.get("secure_enclave").asBoolean();
+
+        logger.info("Platform SSO: nonce: " + nonce);
+        logger.info("Platform SSO: clientId: " + clientId);
+        NonceService nonceService = new NonceService(context.getSession());
+        if (!nonceService.validateNonce(nonce, clientId)) {
+            logger.error("Platform SSO: Nonce is wrong. Aborting");
+            return false;
+
+        }
+
         long signedAt = env.get("signed_at").asLong();
 
         long now = Instant.now().getEpochSecond();
@@ -516,8 +529,13 @@ public class PSSOAuthenticator  implements Authenticator {
             return  false;
         }
 
+
             UserModel user = context.getSession().users().getUserByUsername(context.getRealm(), username);
-            if (user != null) {
+            if (user == null) {
+                    context.attempted();
+                    return false;
+            }
+            if (isSecureEnclave) {
                 List<CredentialModel> credentials = user.credentialManager()
                         .getStoredCredentialsByTypeStream(UserPSSOCredentialModel.TYPE)
                         .toList();
@@ -540,9 +558,6 @@ public class PSSOAuthenticator  implements Authenticator {
                     context.attempted();
                 }
 
-            } else {
-                context.attempted();
-                return false;
             }
 
 
