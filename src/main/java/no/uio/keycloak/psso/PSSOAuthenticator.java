@@ -491,8 +491,7 @@ public class PSSOAuthenticator  implements Authenticator {
         String clientId = env.get("client_id").asText();
         boolean isSecureEnclave = env.get("secure_enclave").asBoolean();
 
-        logger.info("Platform SSO: nonce: " + nonce);
-        logger.info("Platform SSO: clientId: " + clientId);
+
         NonceService nonceService = new NonceService(context.getSession());
         if (!nonceService.validateNonce(nonce, clientId)) {
             logger.error("Platform SSO: Nonce is wrong. Aborting");

@@ -17,7 +17,9 @@
 */
 package no.uio.keycloak.psso;
 
+import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWEObject;
+import com.nimbusds.jose.Payload;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.util.Base64URL;
@@ -29,6 +31,8 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
 import no.uio.keycloak.psso.token.JWSDecoder;
 import org.jboss.logging.Logger;
+import org.json.JSONException;
+import org.json.JSONObject;
 import org.keycloak.component.ComponentModel;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.credential.CredentialModel;
@@ -50,8 +54,11 @@ import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 
 import java.security.interfaces.ECPublicKey;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.*;
+
+import static no.uio.keycloak.psso.token.JweBuilder.jsonObjectToMap;
 
 /**
  * @author <a href="mailto:franciaa@uio.no">Francis Augusto Medeiros-Logeay</a>
@@ -319,10 +326,6 @@ public class PSSOResource {
         Map<String,Object> claims;
         try {
             claims = jwsDecoder.parseAndVerify(jwsCompact);
-            for(Map.Entry<String, Object> claim : claims.entrySet()) {
-                logger.info(claim.getKey() + ": " + claim.getValue());
-            }
-
         } catch (Exception e) {
             logger.error("Error parsing JWS compact claims: " + e.getMessage());
             return Response.status(Response.Status.UNAUTHORIZED)
@@ -335,6 +338,7 @@ public class PSSOResource {
         EntityManager em = jpa.getEntityManager();
         String deviceKey = jwsDecoder.getKid();
         Device device;
+        boolean isRefreshTokenGrant = false;
         try {
             device = em.createNamedQuery("Device.findBySignKeyId", Device.class)
                     .setParameter("signingKeyId", deviceKey)
@@ -366,16 +370,18 @@ public class PSSOResource {
         UserModel user = session.users().getUserByUsername(realm, sub);
         String deviceUDID = device.getDeviceUDID();
         TokenIssuer tokenIssuer = new TokenIssuer(session);
-
+        boolean isKeyExchange = claims.containsKey("request_type");
+        boolean isGrantType = claims.containsKey("grant_type");
         String refreshToken;
         Map<String,Object> assertionClaims;
+
         // Never happens in Secure Enclave authentication.
         // Will be used if we implement other types of authentication methods
-        if (claims.get("grant_type").toString().equals("refresh_token")) {
-            logger.info("Platform SSO: Refresh token request received for user "+sub);
+        if (isGrantType && claims.get("grant_type").toString().equals("refresh_token")) {
+            isRefreshTokenGrant = true;
+            logger.info("Platform SSO: Refresh token grant type requested by user "+sub);
             refreshToken = claims.get("refresh_token").toString();
             RefreshTokenValidator refreshTokenValidator = new RefreshTokenValidator(session);
-
             try {
                 refreshTokenValidator.validate(refreshToken, "psso");
                 tokenIssuer.setRefreshToken(refreshToken);
@@ -383,7 +389,7 @@ public class PSSOResource {
                 logger.error("Error validating refresh token: " + e.getMessage());
                 Response response = Response.status(Response.Status.UNAUTHORIZED).build();
             }
-        }else if (claims.get("grant_type").toString().equals("urn:ietf:params:oauth:grant-type:jwt-bearer")) {
+        }else if (isGrantType && claims.get("grant_type").toString().equals("urn:ietf:params:oauth:grant-type:jwt-bearer")) {
             logger.info("Platform SSO: Token request received for user "+sub+" with grant type: "+grantType);
             String embeddedAssertions = claims.get("assertion").toString();
 
@@ -400,13 +406,6 @@ public class PSSOResource {
                         .build();
             }
         }
-        String nonce = claims.get("nonce").toString();
-        ClientModel client = session.clients().getClientByClientId(realm,"psso");
-        EventBuilder event = new EventBuilder(realm, session, session.getContext().getConnection());
-        Set<String> clientScopeIds = client.getClientScopes(true).keySet();
-        //
-        // logger.debug("Client scope IDs: " + clientScopeIds);
-        IssuedTokens tokens = tokenIssuer.issueSignedTokens(realm,user, client, "openid offline_access urn:apple:platformsso groups", event, nonce, false, device);
 
         for (String claim : claims.keySet()) {
             logger.debug("Request claim: "+ claim +": " + claims.get(claim));
@@ -416,18 +415,61 @@ public class PSSOResource {
         String apv = (String) jweCrypto.get("apv");
 
         // "Apple" is the apu encoded here as a base64 url
-
         byte[] apvBytes = apv != null ? Base64URL.from(apv).decode() : null;
         ECKey deviceKeyEC;
         String jwe;
         ECPublicKey deviceKeyECPublicKey;
 
-        RefreshToken refreshTokenObject = tokens.refreshTokenObject;
-        String refreshExpiresIn = refreshTokenObject.getType().equals("Offline") ? null : String.valueOf(tokenIssuer.refreshExpiresIn);
-        String expiresIn = String.valueOf(tokenIssuer.expiresIn);
 
 
+        String nonce = claims.get("nonce").toString();
 
+        JSONObject body = new JSONObject();
+        Payload payload = null;
+        String typeHeaderValue = "";
+
+        if (isKeyExchange) {
+            typeHeaderValue = "platformsso-key-response+jwt";
+            logger.info("Platform SSO: Key request received for user "+sub);
+            if (claims.get("request_type").toString().equals("key_request")) {
+                payload = KeyExchangeUtils.keyRequestResponse(device, sub);
+            } else if (claims.get("request_type").toString().equals("key_exchange")) {
+                logger.info("Platform SSO: Key exchange received for user "+sub);
+                String otherPublicKey = claims.get("other_publickey").toString();
+                String keyContext = claims.get("key_context").toString();
+                payload = KeyExchangeUtils.keyExchangeResponse(
+                        device,
+                        otherPublicKey,
+                        keyContext
+                );
+            }
+
+        } else {
+
+            ClientModel client = session.clients().getClientByClientId(realm, "psso");
+            EventBuilder event = new EventBuilder(realm, session, session.getContext().getConnection());
+            Set<String> clientScopeIds = client.getClientScopes(true).keySet();
+            //
+            IssuedTokens tokens = tokenIssuer.issueSignedTokens(realm, user, client, "openid offline_access urn:apple:platformsso groups", event, nonce, isRefreshTokenGrant, device);
+            RefreshToken refreshTokenObject = tokens.refreshTokenObject;
+            String refreshExpiresIn = refreshTokenObject.getType().equals("Offline") ? null : String.valueOf(tokenIssuer.refreshExpiresIn);
+            String expiresIn = String.valueOf(tokenIssuer.expiresIn);
+            try {
+                body.put("id_token", tokens.idToken);
+                body.put("refresh_token", tokens.refreshToken);
+                if (expiresIn != null) body.put("expires_in", expiresIn);
+                if (refreshExpiresIn != null) body.put("refresh_token_expires_in", refreshExpiresIn);
+                body.put("token_type", "Bearer");
+                payload = new Payload(jsonObjectToMap(body));
+                typeHeaderValue = "platformsso-login-response+jwt";
+
+            } catch (JSONException e) {
+               logger.error("Error Creating the JWE: " + e.getMessage());
+               return Response.status(Response.Status.UNAUTHORIZED)
+                       .type("application/"+typeHeaderValue)
+                       .build();
+            }
+        }
         try {
           deviceKeyECPublicKey = jwsDecoder.convertX963ToECPublicKey(device.getEncryptionKey());
             deviceKeyEC = new ECKey.Builder(
@@ -439,23 +481,20 @@ public class PSSOResource {
             jwe = JweBuilder.buildPlatformSsoJwe(
                     deviceKeyEC,
                     apvBytes,
-                    tokens.idToken,
-                    tokens.refreshToken,
-                    expiresIn,
-                    refreshExpiresIn,
-                    "platformsso-login-response+jwt"
+                    payload,
+                    typeHeaderValue
             );
             JWEObject parsed = JWEObject.parse(jwe);
             logger.info("Platform SSO: User: "+sub+" on device: "+device.getSerialNumber()+" got an SSO token.");
             return Response.ok()
-                    .type("application/platformsso-login-response+jwt")
+                    .type("application/"+typeHeaderValue)
                     .entity(jwe)
                     .build();
          } catch ( Exception e)
         {
             logger.error("Error Creating the JWE: " + e.getMessage());
             return Response.status(Response.Status.UNAUTHORIZED)
-                    .type("application/platformsso-login-response+jwt")
+                    .type("application/"+typeHeaderValue)
                     .build();
         }
 

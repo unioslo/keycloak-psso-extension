@@ -24,6 +24,7 @@ import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.UserCredentialModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.representations.RefreshToken;
 
 
 import java.net.URL;
@@ -51,6 +52,8 @@ public class AssertionValidator {
      */
     public Device validate(Map<String, Object> claims, Device device, String expectedAudience, String expectedIssuer, String clientRequestId) {
 
+        // Checking of common claims for all assertion types
+
         // ---- iss ----
         String iss = (String) claims.get("iss");
         if (!Objects.equals(iss, expectedIssuer)) {
@@ -63,6 +66,94 @@ public class AssertionValidator {
         if (sub == null || sub.isEmpty()) {
             logger.error("Invalid sub");
             throw new IllegalArgumentException("Missing subject (sub).");
+        }
+
+        // ---- jwe_crypto.apv ----
+        Map<String, Object> jweCrypto = (Map<String, Object>) claims.get("jwe_crypto");
+        if (jweCrypto == null || jweCrypto.get("apv") == null) {
+            logger.error("Invalid jwe_crypto: " + jweCrypto);
+            throw new IllegalArgumentException("Missing jwe_crypto.apv in request.");
+        }
+
+        // ---- iat / exp ----
+        Instant now = Instant.now();
+        Instant iat = getInstant(claims.get("iat"), "iat");
+        Instant exp = getInstant(claims.get("exp"), "exp");
+
+        if (iat.isAfter(now.plusSeconds(60))) {
+            logger.error("Invalid iat.");
+            throw new IllegalArgumentException("iat is in the future.");
+        }
+
+        if (exp.isBefore(now)) {
+            logger.error("Token expired.");
+            throw new IllegalArgumentException("Token has expired.");
+        }
+
+        // ---- request_nonce ----
+        String requestNonce = (String) claims.get("request_nonce");
+        if (requestNonce == null || requestNonce.isEmpty()) {
+            logger.error("Invalid request_nonce: " + requestNonce);
+            throw new IllegalArgumentException("Missing request_nonce.");
+        }
+
+        NonceService nonceService = new NonceService(session);
+        if (!nonceService.validateNonce(requestNonce, clientRequestId)){
+            logger.error("Invalid nonce: " + requestNonce);
+            throw new IllegalArgumentException("Invalid nonce: " + requestNonce);
+
+        }
+        String grantType = (String) claims.get("grant_type");
+        boolean refreshTokenGrantType = grantType != null && grantType.equalsIgnoreCase("refresh_token") ;
+
+
+        Object requestType = claims.get("request_type");
+        boolean keyExchange = false;
+        if  (requestType != null && (requestType.equals("key_exchange") || requestType.equals("key_request"))){
+            keyExchange = true;
+        }
+
+
+
+        Object refreshTokenObject = claims.get("refresh_token");
+        if ((keyExchange || refreshTokenGrantType) && refreshTokenObject == null) {
+            logger.error("Platform SSO: No refresh token was sent.: " );
+            throw new IllegalArgumentException("No refresh token was sent.");
+        }
+
+        if (refreshTokenObject != null) {
+            String refreshTokenString = (String) refreshTokenObject;
+            RefreshTokenValidator validator = new RefreshTokenValidator(session);
+
+            try {
+               RefreshToken refreshToken =  validator.validate(refreshTokenString, "psso");
+               if (!sub.equals(refreshToken.getSubject())) {
+                   logger.error("Platform SSO: Refresh token does not match expected subject.");
+                   throw new IllegalArgumentException("Invalid refresh token." );
+               }
+
+            } catch (Exception e) {
+                logger.error("Platform SSO: Invalid refresh token");
+                throw new IllegalArgumentException("Invalid refresh token." );
+
+            }
+
+        }
+
+
+
+        // For key requests / key exchange requests, we are done with checking
+        if  (requestType != null) {
+            if  (requestType instanceof String) {
+                if (requestType.equals("key_request") || requestType.equals("key_exchange")) {
+
+
+                    logger.info("Platform SSO: Key request attestation is valid.");
+                    return device;
+                }
+            }
+            logger.error("Platform SSO: Invalid request type: " + requestType);
+            throw new IllegalArgumentException("Invalid request type: " + requestType);
         }
 
         // ---- aud (audience) ----
@@ -82,20 +173,7 @@ public class AssertionValidator {
             throw new IllegalArgumentException("Invalid audience type.");
         }
 
-        // ---- iat / exp ----
-        Instant now = Instant.now();
-        Instant iat = getInstant(claims.get("iat"), "iat");
-        Instant exp = getInstant(claims.get("exp"), "exp");
 
-        if (iat.isAfter(now.plusSeconds(60))) {
-            logger.error("Invalid iat.");
-            throw new IllegalArgumentException("iat is in the future.");
-        }
-
-        if (exp.isBefore(now)) {
-            logger.error("Token expired.");
-            throw new IllegalArgumentException("Token has expired.");
-        }
 
         // ---- scope ----
         String scope = (String) claims.get("scope");
@@ -107,7 +185,6 @@ public class AssertionValidator {
         }
 
         // ---- grant_type ----
-        String grantType = (String) claims.get("grant_type");
         if (!"urn:ietf:params:oauth:grant-type:jwt-bearer".equals(grantType) && !"refresh_token".equals(grantType) && !grantType.equals("password")) {
             logger.error("Invalid grant type: " + grantType);
             throw new IllegalArgumentException("Invalid grant_type: " + grantType);
@@ -124,19 +201,7 @@ public class AssertionValidator {
             }
         }
 
-        // ---- request_nonce ----
-        String requestNonce = (String) claims.get("request_nonce");
-        if (requestNonce == null || requestNonce.isEmpty()) {
-            logger.error("Invalid request_nonce: " + requestNonce);
-            throw new IllegalArgumentException("Missing request_nonce.");
-        }
 
-        NonceService nonceService = new NonceService(session);
-        if (!nonceService.validateNonce(requestNonce, clientRequestId)){
-            logger.error("Invalid nonce: " + requestNonce);
-            throw new IllegalArgumentException("Invalid nonce: " + requestNonce);
-
-        }
 
         // ---- signKeyId ----
         String signKeyId = (String) claims.get("signKeyId");
@@ -152,12 +217,6 @@ public class AssertionValidator {
             throw new IllegalArgumentException("encKeyId mismatch.");
         }
 
-        // ---- jwe_crypto.apv ----
-        Map<String, Object> jweCrypto = (Map<String, Object>) claims.get("jwe_crypto");
-        if (jweCrypto == null || jweCrypto.get("apv") == null) {
-            logger.error("Invalid jwe_crypto: " + jweCrypto);
-            throw new IllegalArgumentException("Missing jwe_crypto.apv in request.");
-        }
 
         logger.info("Assertion claims validated successfully for user "+sub);
         return device;

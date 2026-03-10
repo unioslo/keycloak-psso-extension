@@ -56,10 +56,7 @@ public class JweBuilder {
     public static String buildPlatformSsoJwe(
             ECKey recipientEcJwk,   // recipient's EC public key (P-256) as Nimbus ECKey
             byte[] apv,             // client PartyVInfo (may be null)
-            String idTokenSigned,
-            String refreshToken,
-            String expiresIn,
-            String refreshExpiresIn,
+            Payload payload,
             String typHeaderValue
     ) throws JOSEException {
 
@@ -67,19 +64,6 @@ public class JweBuilder {
         if (!"P-256".equals(recipientEcJwk.getCurve().getName())) {
             throw new JOSEException("Recipient EC key must be P-256 for Platform SSO.");
         }
-
-        // Build payload JSON
-        JSONObject body = new JSONObject();
-        try {
-            body.put("id_token", idTokenSigned);
-            body.put("refresh_token", refreshToken);
-            if (expiresIn != null) body.put("expires_in", expiresIn);
-            if (refreshExpiresIn != null) body.put("refresh_token_expires_in", refreshExpiresIn);
-            body.put("token_type", "Bearer");
-        } catch (JSONException e) {
-            throw new JOSEException(e.getMessage());
-        }
-        Payload payload = new Payload(jsonObjectToMap(body));
 
         // Build header: ECDH-ES (direct) + A256GCM
         JWEHeader.Builder headerBuilder = new JWEHeader.Builder(
