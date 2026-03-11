@@ -6,8 +6,9 @@ This is a Keycloak extension that makes it compliant with [Apple Platform Single
 
 - Provides device attestation so that only requests from enrolled macOS devices are accepted
 - Allows revocation of user registration on GUI, both for users and administrators
+- Use a registration token for MDM verification
 
-![User registration is trated as a credential on Keycloak. The user (and administrators) can see and managem them.](https://github.com/user-attachments/assets/8d94bd8c-66a2-4cd3-ba9e-6f29a0254e54)
+![User registration is trated as a credential on Keycloak when using the Secure Enclave keys. The user (and administrators) can see and managem them.](https://github.com/user-attachments/assets/8d94bd8c-66a2-4cd3-ba9e-6f29a0254e54)
 
 
 ## Requirements
@@ -19,10 +20,9 @@ please open an issue and we will try to implement it. Or add the scheme yourself
 
 ## Known limitations
 
-- **Secure Enclave-only**: this extension only implements the Secure Enclave authentication method. 
 - **Fixed client**: to use this extension, you need to create a client called _psso_. In the future we will make this configurable. The client needs to be public and it needs to include the `urn:apple:platformsso` scope.
 - **Revoke Refresh Token needs to be off**: the refresh token is used for login, as it is used as an opaque token to authenticate and identify the user. In the future we might change this. This is the default option in Keycloak.
-- **No UI or API for managing devices**: Currently, devices can only be enrolled. An API will be added for integration with MDMs so that the lifecycle of a device can include removing them from Keycloak.
+- **No UI for managing devices**: Currently, devices can only be managed via API. Use our device API for integration with MDMs so that the lifecycle of a device can include removing them from Keycloak.
 
 ## How to use it
 
