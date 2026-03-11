@@ -33,4 +33,5 @@ public class EnrollmentRequest {
     public List<String> attestation;
     public String accessToken;
     public String registrationToken;
+    public String registrationMethod;
 }

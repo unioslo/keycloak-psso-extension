@@ -149,5 +149,6 @@
         </createIndex>
     </changeSet>
     <include file="/META-INF/changelog/1-change-field-length.xml"/>
+    <include file="/META-INF/changelog/2-add-registration-method.xml"/>
 
 </databaseChangeLog>

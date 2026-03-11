@@ -33,8 +33,9 @@ import java.util.Objects;
         @NamedQuery(name = "Device.findBySignKeyId",
                 query = "SELECT d FROM Device d WHERE d.signingKeyId = :signingKeyId"),
         @NamedQuery(name = "Device.findByEncKeyId",
-                query = "SELECT d FROM Device d WHERE d.encryptionKeyId = :encryptionKeyId")
-
+                query = "SELECT d FROM Device d WHERE d.encryptionKeyId = :encryptionKeyId"),
+        @NamedQuery(name = "Device.findByRegistrationMethod",
+                query = "SELECT d FROM Device d WHERE d.registrationMethod = :method")
 })
 /**
  * @author <a href="mailto:franciaa@uio.no">Francis Augusto Medeiros-Logeay</a>
@@ -84,11 +85,15 @@ public class Device {
     @Column(name = "creation_time", nullable = false)
     private long creationTime;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "registration_method")
+    private RegistrationMethod registrationMethod;
+
     public Device() {}
 
     public Device(Long id, String realmId, String deviceUDID, String serialNumber,
                   String category, String signingKey, String signingKeyId,  String encryptionKey,  String encryptionKeyId,
-                  String keyExchangeKey, String registeredBy, long creationTime) {
+                  String keyExchangeKey, String registeredBy, long creationTime, RegistrationMethod registrationMethod) {
         this.id = id;
         this.realmId = realmId;
         this.deviceUDID = deviceUDID;
@@ -101,6 +106,7 @@ public class Device {
         this.registeredBy = registeredBy;
         this.keyExchangeKey = keyExchangeKey;
         this.creationTime = creationTime;
+        this.registrationMethod = registrationMethod;
     }
 
     // getters and setters
@@ -141,6 +147,13 @@ public class Device {
     public long getCreationTime() { return creationTime; }
     public void setCreationTime(long creationTime) { this.creationTime = creationTime; }
 
+    public RegistrationMethod getRegistrationMethod() {
+        return registrationMethod;
+    }
+    public void setRegistrationMethod(RegistrationMethod registrationMethod) {
+        this.registrationMethod = registrationMethod;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -165,3 +178,4 @@ public class Device {
                 '}';
     }
 }
+

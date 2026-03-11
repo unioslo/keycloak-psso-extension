@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+          http://www.liquibase.org/xml/ns/dbchangelog
+          http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
+
+    <changeSet id="8-add-registration-method" author="francis">
+
+        <addColumn tableName="psso_device">
+            <column name="registration_method"
+                    type="VARCHAR(32)"
+                    defaultValue="SECURE_ENCLAVE" >
+            <constraints nullable="false"/>
+            </column>
+        </addColumn>
+
+        <update tableName="psso_device">
+            <column name="registration_method" value="SECURE_ENCLAVE"/>
+            <where>registration_method IS NULL</where>
+        </update>
+
+        <!-- index for fast lookup by registration method -->
+        <createIndex indexName="idx_psso_registration_method"
+                     tableName="psso_device">
+            <column name="registration_method"/>
+        </createIndex>
+
+        <!-- very useful for Keycloak realm-scoped queries -->
+        <createIndex indexName="idx_psso_realm_registration_method"
+                     tableName="psso_device">
+            <column name="realm_id"/>
+            <column name="registration_method"/>
+        </createIndex>
+
+    </changeSet>
+
+</databaseChangeLog>

@@ -142,7 +142,10 @@ public class PSSOResource {
         String nonce = enrollmentRequest.nonce;
         String accessToken = enrollmentRequest.accessToken;
         String registrationToken = enrollmentRequest.registrationToken;
+        String registrationMethodRequest = enrollmentRequest.registrationMethod;
         AccessToken token;
+
+        RegistrationMethod registrationMethod = RegistrationMethod.valueOf(registrationMethodRequest);
 
         if (registrationTokenRequired && (savedRegistrationToken.isEmpty() || registrationToken == null || registrationToken.isEmpty() || !registrationToken.equals(savedRegistrationToken))) {
             logger.error("Platform SSO: Registration token not saved, is empty or there is a wrong one.");
@@ -203,6 +206,7 @@ public class PSSOResource {
             existingDevice.setRegisteredBy(registeredBy);
             existingDevice.setEncryptionKeyId(encKeyID);
             existingDevice.setSigningKeyId(signKeyID);
+            existingDevice.setRegistrationMethod(registrationMethod);
             em.merge(existingDevice);
         } else {
             logger.info("Registering new device with serial number: " + serial + ". Registered by user: " + registeredBy);
@@ -218,6 +222,7 @@ public class PSSOResource {
             device.setRegisteredBy(registeredBy);
             device.setEncryptionKeyId(encKeyID);
             device.setSigningKeyId(signKeyID);
+            device.setRegistrationMethod(registrationMethod);
             em.persist(device);
         }
 

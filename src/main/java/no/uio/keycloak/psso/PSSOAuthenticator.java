@@ -161,6 +161,20 @@ public class PSSOAuthenticator  implements Authenticator {
                     context.attempted();
                     return;
                 }
+                Device device = new Device();
+                try {
+                    JpaConnectionProvider jpa = context.getSession().getProvider(JpaConnectionProvider.class);
+                    EntityManager em = jpa.getEntityManager();
+
+                    device = em.createNamedQuery("Device.findBySignKeyId", Device.class)
+                            .setParameter("signingKeyId", kid)
+                            .getSingleResult();
+                } catch (Exception e) {
+                    logger.error("Platform SSO: No device found. Aborting.: " + e.getMessage());
+                    logger.error("Platform SSO: Authentication attempt failed. "+requestData);
+                    context.attempted();
+                    return;
+                }
 
                 if (refreshToken != null || idToken != null) {
                         UserModel user = context.getSession().users().getUserByUsername(realm, username);
@@ -197,7 +211,13 @@ public class PSSOAuthenticator  implements Authenticator {
                                 //context.setForwardedInfoMessage(Messages.REAUTHENTICATE);
                                 //authSession.setAuthNote(AuthenticationManager.FORCED_REAUTHENTICATION, "false");
 
+
                                 logger.info("Platform SSO Reauthentication needed for user " + username+ " "+ requestData);
+                                if (device.getRegistrationMethod() == RegistrationMethod.PASSWORD){
+                                    logger.info("Platform SSO: device uses Password authentication. Authentication flow continues without PSSO tokens.");
+                                    context.attempted();
+                                    return;
+                                }
                                 Response challenge = context.form()
                                         .createForm("reauthentication.ftl");
                                 context.challenge(challenge);
@@ -349,9 +369,8 @@ public class PSSOAuthenticator  implements Authenticator {
                 String tokenString = env.get("token").asText();
                 String tokenType = env.get("token_type").asText();
 
-                // String username = env.get("username").asText();
-
                 String kid = env.get("kid").asText();
+                // String username = env.get("username").asText();
                // TokenValidator validator = TokenValidatorFactory.getValidator(tokenType, context.getSession());
 
                 String username = null;
