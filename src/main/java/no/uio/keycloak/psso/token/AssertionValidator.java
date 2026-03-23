@@ -189,19 +189,23 @@ public class AssertionValidator {
             logger.error("Invalid grant type: " + grantType);
             throw new IllegalArgumentException("Invalid grant_type: " + grantType);
         }
+        UserModel user = session.users().getUserByUsername(session.getContext().getRealm(), sub);
 
         if (grantType.equals("password")) {
             String password = (String) claims.get("password");
-            UserModel user = session.users().getUserByUsername(session.getContext().getRealm(), sub);
             UserCredentialModel credential =
                     UserCredentialModel.password(password);
             if (password == null || password.isEmpty() || !user.credentialManager().isValid(credential)) {
-                logger.error("Invalid password.");
+                logger.error("Platform SSO: Invalid password.");
                 throw new IllegalArgumentException("Invalid password.");
             }
         }
 
+        if (!user.isEnabled()){
+            logger.error("Platform SSO: User is disabled.");
+            throw new IllegalArgumentException("User is disabled.");
 
+        }
 
         // ---- signKeyId ----
         String signKeyId = (String) claims.get("signKeyId");

@@ -161,6 +161,12 @@ public class PSSOAuthenticator  implements Authenticator {
                     context.attempted();
                     return;
                 }
+                if (!session.users().getUserByUsername(realm, username).isEnabled()) {
+                    logger.error("Platform SSO: Username and preferred_username don't match. Yser: " + username + " " + requestData);
+                    context.attempted();
+                    return;
+                }
+
                 Device device = new Device();
                 try {
                     JpaConnectionProvider jpa = context.getSession().getProvider(JpaConnectionProvider.class);
@@ -176,6 +182,8 @@ public class PSSOAuthenticator  implements Authenticator {
                     return;
                 }
 
+                context.getAuthenticationSession().setUserSessionNote("psso_auth_method",device.getRegistrationMethod().name());
+                logger.info("Platform SSO: User authentication method: "+device.getRegistrationMethod().name());
                 if (refreshToken != null || idToken != null) {
                         UserModel user = context.getSession().users().getUserByUsername(realm, username);
                     context.setUser(user);
