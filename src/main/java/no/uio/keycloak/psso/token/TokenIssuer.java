@@ -218,7 +218,7 @@ public class TokenIssuer {
         token.setNonce(nonce);
         token.setSessionId(userSession.getId());
         RefreshToken refreshTokenObject = builder.getRefreshToken();
-        refreshTokenObject.setSubject(user.getUsername());
+        refreshTokenObject.setSubject(user.getId());
         refreshTokenObject.setPreferredUsername(user.getUsername());
 
 

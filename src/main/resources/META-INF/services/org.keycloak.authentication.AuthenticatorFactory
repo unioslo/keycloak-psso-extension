@@ -1,2 +1,3 @@
 no.uio.keycloak.psso.PSSOAuthenticatorFactory
+no.uio.keycloak.psso.PSSORegistrationAuthenticatorFactory
 no.uio.keycloak.psso.PSSOConditionalFactory

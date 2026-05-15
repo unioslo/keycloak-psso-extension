@@ -160,7 +160,7 @@ public class RefreshTokenValidator {
         //
         // 7. User must still exist
         //
-        UserModel user = session.users().getUserByUsername(realm, token.getSubject());
+        UserModel user = session.users().getUserById(realm, token.getSubject());
         if (user == null) {
             throw unauthorized("User no longer exists");
         }

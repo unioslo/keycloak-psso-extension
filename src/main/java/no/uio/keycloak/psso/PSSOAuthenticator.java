@@ -143,7 +143,7 @@ public class PSSOAuthenticator  implements Authenticator {
                        RefreshTokenValidator validator = new RefreshTokenValidator(session);
                         try {
                                 refreshToken = validator.validate(tokenString, "psso");
-                                username = refreshToken.getSubject();
+                                username = refreshToken.getPreferredUsername();
                                 sessionId = refreshToken.getSessionId();
 
                         } catch (Exception e) {
@@ -410,7 +410,7 @@ public class PSSOAuthenticator  implements Authenticator {
 
                         try {
                             refreshToken = validator.validate(tokenString, "psso");
-                            username = refreshToken.getSubject();
+                            username = refreshToken.getPreferredUsername();
                             sessionId = refreshToken.getSessionId();
 
                         } catch (Exception e) {
@@ -630,7 +630,7 @@ public class PSSOAuthenticator  implements Authenticator {
 
         // Otherwise assume it's base64 of either:
         // - raw EC point (0x04 || X || Y, length 65) OR
-        // - DER SubjectPublicKeyInfo (starts with 0x30)
+        // - DER subjectPublicKeyInfo (starts with 0x30)
         byte[] decoded = Base64.getDecoder().decode(key);
 
         // If it's X.509 DER already (starts with 0x30), use it directly

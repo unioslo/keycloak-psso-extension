@@ -210,7 +210,7 @@ public class AssertionValidator {
         // ---- signKeyId ----
         String signKeyId = (String) claims.get("signKeyId");
         if (!Objects.equals(signKeyId, device.getSigningKeyId())) {
-            logger.error("Invalid signKeyId: " + signKeyId);
+            logger.error("Invalid signKeyId." );
             throw new IllegalArgumentException("signKeyId mismatch.");
         }
 
