@@ -18,12 +18,23 @@
 
 package no.uio.keycloak.psso;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
 import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.Response;
+import no.uio.keycloak.psso.token.IDTokenValidator;
 import no.uio.keycloak.psso.token.RefreshTokenValidator;
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.*;
+import org.keycloak.common.util.Time;
+import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.*;
+import org.keycloak.protocol.LoginProtocol;
+import org.keycloak.representations.IDToken;
 import org.keycloak.representations.RefreshToken;
+import org.keycloak.services.managers.AuthenticationManager;
+import org.keycloak.sessions.AuthenticationSessionModel;
 
 /**
  * @author <a href="mailto:franciaa@uio.no">Francis Augusto Medeiros-Logeay</a>
@@ -35,7 +46,7 @@ public class PSSORegistrationAuthenticator implements Authenticator {
     @Override
     public void authenticate(AuthenticationFlowContext context) {
         HttpHeaders headers = context.getHttpRequest().getHttpHeaders();
-        String pSssoHeader = headers.getHeaderString("Authorization-Setup-Assistant-PSSO");
+        String pSssoHeader = headers.getHeaderString("Platform-SSO-Authorization");
         String ip_address = "";
         String userAgent = "";
         try {
@@ -46,28 +57,74 @@ public class PSSORegistrationAuthenticator implements Authenticator {
         }
         String requestData = "IP Address: " + ip_address + " User Agent: " + userAgent;
         if (pSssoHeader != null) {
+            if (pSssoHeader != null) {
+                logger.info("Platform SSO Authentication Request: " + requestData);
+                pSssoHeader = pSssoHeader.replaceFirst("^[Bb]earer\\s+", "");
+                String ssoIdB64;
+                String sigB64;
+                try {
+                    String[] split = pSssoHeader.split("\\.");
+                    ssoIdB64 = split[0];
+                    sigB64 = split[1];
+                } catch (Exception e) {
+                    logger.error("Platform SSO: Wrong SSO header format. " + requestData);
+                    logger.error(e);
+                    context.failure(AuthenticationFlowError.GENERIC_AUTHENTICATION_ERROR);
+                    return;
 
-            logger.info("Platform SSO Simple Authentication request: " + requestData);
-            pSssoHeader = pSssoHeader.replaceFirst("^[Bb]earer\\s+", "");
-            RefreshTokenValidator validator = new RefreshTokenValidator(context.getSession());
-            try {
-                RefreshToken refreshToken = validator.validate(pSssoHeader, "psso");
-                UserModel user = context.getSession().users().getUserById(context.getRealm(), refreshToken.getSubject());
-                if (user == null) {
+                }
+
+                byte[] tokenBytes = PSSOAuthenticator.base64UrlDecode(ssoIdB64);
+                byte[] signatureBytes = PSSOAuthenticator.base64UrlDecode(sigB64);
+                ObjectMapper mapper = new ObjectMapper();
+                JsonNode env;
+                try {
+                    env = mapper.readTree(tokenBytes);
+                } catch (Exception e) {
+
+                    logger.error("Platform SSO: Error parsing SSO Token. " + e.getMessage());
+                    logger.error("Platform SSO: Authentication attempt failed. " + requestData);
+
                     context.attempted();
                     return;
                 }
+                RealmModel realm = context.getRealm();
+                String preferred_username = env.get("username").asText();
+                String tokenString = env.get("token").asText();
+                String username ;
+                String serial;
 
-                context.setUser(user);
-                context.success();
-                return;
+                KeycloakSession session = context.getSession();
+                RefreshToken refreshToken;
 
-            } catch (Exception e) {
-                logger.error("Platform SSO: Simple Authentication attempt failed. " + requestData);
-                logger.error(e);
+                RefreshTokenValidator validator = new RefreshTokenValidator(session);
+                try {
+                    refreshToken = validator.validate(tokenString, "psso");
+                    username = refreshToken.getPreferredUsername();
+                    serial = refreshToken.getOtherClaims().get("macSerial").toString();
+
+
+
+                } catch (Exception e) {
+                    logger.error("Platform SSO: Invalid refresh token: " + e + "   " + requestData);
+                    context.attempted();
+                    return;
+                }
+                if (PSSOAuthenticator.verifySignature(context, env, ssoIdB64, sigB64, signatureBytes, serial)) {
+
+
+
+                    if (username != null && username.equals(preferred_username)) {
+                        context.setUser(session.users().getUserByUsername(realm, username));
+                        context.success();
+                        logger.info("Platform SSO: Authentication successful for user: "+ username + requestData + " device serial: "+serial);
+                        return;
+                    }
+                }
+            }else {
                 context.attempted();
-            }
 
+            }
         }
         context.attempted();
     }

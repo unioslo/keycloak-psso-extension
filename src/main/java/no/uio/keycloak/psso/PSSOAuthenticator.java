@@ -73,7 +73,6 @@ public class PSSOAuthenticator  implements Authenticator {
         }
         String requestData = "IP Address: " + ip_address+ " User Agent: " + userAgent;
         if (pSssoHeader != null) {
-
             logger.info("Platform SSO Authentication Request: " + requestData);
             pSssoHeader = pSssoHeader.replaceFirst("^[Bb]earer\\s+", "");
             String ssoIdB64;
@@ -107,55 +106,58 @@ public class PSSOAuthenticator  implements Authenticator {
             RealmModel realm = context.getRealm();
             String preferred_username = env.get("username").asText();
 
-            if (verifySignature(context, env, ssoIdB64, sigB64, signatureBytes)) {
-                String tokenString = env.get("token").asText();
-                String tokenType = env.get("token_type").asText();
-
-                String kid = env.get("kid").asText();
+            String tokenString = env.get("token").asText();
+            String tokenType = env.get("token_type").asText();
+            String kid = env.get("kid").asText();
 
 
-                String username = null;
-                String sessionId = null;
-                KeycloakSession session = context.getSession();
-                IDToken idToken = null;
-                RefreshToken refreshToken = null;
+            String username = null;
+            String sessionId = null;
+            KeycloakSession session = context.getSession();
+            IDToken idToken = null;
+            RefreshToken refreshToken = null;
+            String serial = null;
 
 
-                switch (tokenType) {
-                    case "id_token" -> {
-                       IDTokenValidator validator = new IDTokenValidator(session);
-                        try {
-                                idToken = validator.validate(tokenString, "psso");
-                                username = idToken.getPreferredUsername();
-                                sessionId = idToken.getSessionId();
+            switch (tokenType) {
+                case "id_token" -> {
+                    IDTokenValidator validator = new IDTokenValidator(session);
+                    try {
+                        idToken = validator.validate(tokenString, "psso");
+                        username = idToken.getPreferredUsername();
+                        sessionId = idToken.getSessionId();
+                        serial = idToken.getOtherClaims().get("macSerial").toString();
 
-                        } catch (Exception e) {
-                            logger.error("Platform SSO: Invalid refresh token: " + e + "   " + requestData);
-                            Response challenge = context.form()
-                                    .createForm("reauthentication.ftl");
-                            context.challenge(challenge);
-                            return;
-                        }
-
+                    } catch (Exception e) {
+                        logger.error("Platform SSO: Invalid refresh token: " + e + "   " + requestData);
+                        Response challenge = context.form()
+                                .createForm("reauthentication.ftl");
+                        context.challenge(challenge);
+                        return;
                     }
 
-                    case "refresh_token" -> {
-                       RefreshTokenValidator validator = new RefreshTokenValidator(session);
-                        try {
-                                refreshToken = validator.validate(tokenString, "psso");
-                                username = refreshToken.getPreferredUsername();
-                                sessionId = refreshToken.getSessionId();
-
-                        } catch (Exception e) {
-                            logger.error("Platform SSO: Invalid refresh token: " + e + "   " + requestData);
-                            Response challenge = context.form()
-                                    .createForm("reauthentication.ftl");
-                            context.challenge(challenge);
-                            return;
-                        }
-                    }
                 }
 
+                case "refresh_token" -> {
+                    RefreshTokenValidator validator = new RefreshTokenValidator(session);
+                    try {
+                        refreshToken = validator.validate(tokenString, "psso");
+                        username = refreshToken.getPreferredUsername();
+                        sessionId = refreshToken.getSessionId();
+                        serial = refreshToken.getOtherClaims().get("macSerial").toString();
+
+
+                    } catch (Exception e) {
+                        logger.error("Platform SSO: Invalid refresh token: " + e + "   " + requestData);
+                        Response challenge = context.form()
+                                .createForm("reauthentication.ftl");
+                        context.challenge(challenge);
+                        return;
+                    }
+                }
+            }
+
+            if (verifySignature(context, env, ssoIdB64, sigB64, signatureBytes,serial)) {
                 if (username != null && !username.equals(preferred_username)) {
                     logger.error("Platform SSO: Username and preferred_username don't match. Yser: " + username + " " + requestData);
                     context.attempted();
@@ -253,7 +255,7 @@ public class PSSOAuthenticator  implements Authenticator {
                                 if (offlineSession != null) {
                                     offlineSession.setLastSessionRefresh(now);
                                 }
-                                logger.info("Platform SSO: User " + username + " successfully authenticated with SSO Token. " + requestData);
+                                logger.info("Platform SSO: User " + username + " successfully authenticated with SSO Token. " + requestData+ " device serial number: " + serial);
                                 if (config != null) {
                                     if (config.getConfig().get("add_ms_amr") != null) {
                                         boolean addAmr = Boolean.parseBoolean(config.getConfig().get("add_ms_amr"));
@@ -373,53 +375,55 @@ public class PSSOAuthenticator  implements Authenticator {
                 return;
             }
             RealmModel realm = context.getRealm();
-            if (verifySignature(context, env, ssoIdB64, sigB64, signatureBytes)) {
-                String tokenString = env.get("token").asText();
-                String tokenType = env.get("token_type").asText();
+            String tokenString = env.get("token").asText();
+            String tokenType = env.get("token_type").asText();
 
-                String kid = env.get("kid").asText();
-                // String username = env.get("username").asText();
-               // TokenValidator validator = TokenValidatorFactory.getValidator(tokenType, context.getSession());
+            String kid = env.get("kid").asText();
+            // String username = env.get("username").asText();
+            // TokenValidator validator = TokenValidatorFactory.getValidator(tokenType, context.getSession());
 
-                String username = null;
-                String sessionId = null;
-                KeycloakSession session = context.getSession();
-                IDToken idToken = null;
-                RefreshToken refreshToken = null;
+            String username = null;
+            String sessionId = null;
+            String serial = null;
+            KeycloakSession session = context.getSession();
+            IDToken idToken = null;
+            RefreshToken refreshToken = null;
 
 
-                switch (tokenType) {
-                    case "id_token" -> {
-                        IDTokenValidator validator = new IDTokenValidator(session);
+            switch (tokenType) {
+                case "id_token" -> {
+                    IDTokenValidator validator = new IDTokenValidator(session);
 
-                        try {
-                            idToken = validator.validate(tokenString, "psso");
-                            username = idToken.getPreferredUsername();
-                            sessionId = idToken.getSessionId();
+                    try {
+                        idToken = validator.validate(tokenString, "psso");
+                        username = idToken.getPreferredUsername();
+                        sessionId = idToken.getSessionId();
+                        serial = idToken.getOtherClaims().get("macSerial").toString();
 
-                        } catch (Exception e) {
-                            logger.error("Platform SSO: Invalid ID token: " + e + "   " + requestData);
-                            context.attempted();
-                            return;
-                        }
-
+                    } catch (Exception e) {
+                        logger.error("Platform SSO: Invalid ID token: " + e + "   " + requestData);
+                        context.attempted();
+                        return;
                     }
 
-                    case "refresh_token" -> {
-                       RefreshTokenValidator validator = new RefreshTokenValidator(session);
+                }
 
-                        try {
-                            refreshToken = validator.validate(tokenString, "psso");
-                            username = refreshToken.getPreferredUsername();
-                            sessionId = refreshToken.getSessionId();
+                case "refresh_token" -> {
+                    RefreshTokenValidator validator = new RefreshTokenValidator(session);
 
-                        } catch (Exception e) {
-                            logger.error("Platform SSO: Invalid refresh token: " + e + "   " + requestData);
-                            context.attempted();
-                            return;
-                        }
+                    try {
+                        refreshToken = validator.validate(tokenString, "psso");
+                        username = refreshToken.getPreferredUsername();
+                        sessionId = refreshToken.getSessionId();
+                        serial = refreshToken.getOtherClaims().get("macSerial").toString();
+                    } catch (Exception e) {
+                        logger.error("Platform SSO: Invalid refresh token: " + e + "   " + requestData);
+                        context.attempted();
+                        return;
                     }
                 }
+            }
+            if (verifySignature(context, env, ssoIdB64, sigB64, signatureBytes, serial)) {
 
                 if (idToken != null || refreshToken != null) {
 
@@ -474,7 +478,7 @@ public class PSSOAuthenticator  implements Authenticator {
                                     }
                                 }
                                 
-                                logger.info("Platform SSO: User " + username + " successfully reauthenticated with SSO Token. " + requestData);
+                                logger.info("Platform SSO: User " + username + " successfully reauthenticated with SSO Token. " + requestData + " device serial number: " + serial);
 
                                 context.success();
 
@@ -499,7 +503,7 @@ public class PSSOAuthenticator  implements Authenticator {
 
 
 
-    private boolean verifySignature(AuthenticationFlowContext context, JsonNode env, String ssoIdB64,  String sigB64,byte[]  signatureBytes) {
+    public static boolean verifySignature(AuthenticationFlowContext context, JsonNode env, String ssoIdB64,  String sigB64,byte[]  signatureBytes, String serial) {
         String ip_address = "";
         String userAgent = "";
         try {
@@ -512,7 +516,6 @@ public class PSSOAuthenticator  implements Authenticator {
 
 
         String username = env.get("username").asText();
-        String userKid =  env.get("user_kid").asText();
         String kid = env.get("kid").asText();
         String nonce = env.get("nonce").asText();
         String clientId = env.get("client_id").asText();
@@ -561,35 +564,6 @@ public class PSSOAuthenticator  implements Authenticator {
                     context.attempted();
                     return false;
             }
-            if (isSecureEnclave) {
-                List<CredentialModel> credentials = user.credentialManager()
-                        .getStoredCredentialsByTypeStream(UserPSSOCredentialModel.TYPE)
-                        .toList();
-                boolean foundCredential = false;
-                UserPSSOCredentialData cd = null;
-                for (CredentialModel credential : credentials) {
-                    cd = UserPSSOCredentialModel.getCredentialData(credential);
-                    if (cd.getUserKeyId().equals(userKid)) {
-                        foundCredential = true;
-                        break;
-                    }
-                }
-                if (!foundCredential) {
-                    logger.error("Platform SSO: This user is not registered for Platform SSO. Aborting. User: " + username + " " + requestData);
-                    context.attempted();
-                    return false;
-                }
-                if (cd.getDeviceUDID() == null || !cd.getDeviceUDID().equals(device.getDeviceUDID())) {
-                    logger.error("Plaform SSO: User and device mismatch. Aborting. User: "+username+" "+requestData);
-                    context.attempted();
-                }
-
-            }
-
-
-
-
-
 
           String devicePublicKeyString = device.getSigningKey();
       //  logger.info("Platform SSO: Device public key: " + devicePublicKeyString);
@@ -660,7 +634,7 @@ public class PSSOAuthenticator  implements Authenticator {
     }
 
 
-    private byte[] base64UrlDecode(String input) {
+    public static byte[] base64UrlDecode(String input) {
         String s = input
                 .replace('-', '+')
                 .replace('_', '/');

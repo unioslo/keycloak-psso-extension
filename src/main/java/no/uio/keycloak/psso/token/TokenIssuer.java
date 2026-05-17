@@ -214,12 +214,12 @@ public class TokenIssuer {
                 .generateRefreshToken();
 
         IDToken token = builder.getIdToken();
-        //token.setOtherClaims("nonce", nonce);
         token.setNonce(nonce);
         token.setSessionId(userSession.getId());
         RefreshToken refreshTokenObject = builder.getRefreshToken();
         refreshTokenObject.setSubject(user.getId());
         refreshTokenObject.setPreferredUsername(user.getUsername());
+        refreshTokenObject.setOtherClaims("macSerial", device.getSerialNumber());
 
 
         String issuer = token.getIssuer();
@@ -230,6 +230,7 @@ public class TokenIssuer {
             String realmName = session.getContext().getRealm().getName();
             String newIssuer = baseUrl + "/realms/" + realmName;
             token.setOtherClaims("iss", newIssuer);
+            token.setOtherClaims("macSerial", device.getSerialNumber());
             if (refreshTokenObject.getIssuer() ==  null) {
                 refreshTokenObject.setOtherClaims("iss", newIssuer);
             }
@@ -250,10 +251,10 @@ public class TokenIssuer {
         TokenManager.attachAuthenticationSession(session, userSession,authSession);
         tm.transformAccessTokenResponse(session, response, userSession, clientCtx);
 
-        int now = Time.currentTime(); // seconds in your KC version
+        int now = Time.currentTime();
 
 
-// Manual checks exactly like KC (seconds arithmetic)
+        // Manual checks exactly like KC (seconds arithmetic)
         boolean startedOk = (userSession.getStarted() + realm.getSsoSessionMaxLifespan()) > now;
         boolean refreshOk = (userSession.getLastSessionRefresh() + realm.getSsoSessionIdleTimeout()) > now;
         boolean stateOk = (userSession.getState() == UserSessionModel.State.LOGGED_IN);
