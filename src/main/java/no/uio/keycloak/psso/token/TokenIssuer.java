@@ -216,6 +216,7 @@ public class TokenIssuer {
         IDToken token = builder.getIdToken();
         token.setNonce(nonce);
         token.setSessionId(userSession.getId());
+        token.setOtherClaims("macSerial", device.getSerialNumber());
         RefreshToken refreshTokenObject = builder.getRefreshToken();
         refreshTokenObject.setSubject(user.getId());
         refreshTokenObject.setPreferredUsername(user.getUsername());
@@ -230,11 +231,11 @@ public class TokenIssuer {
             String realmName = session.getContext().getRealm().getName();
             String newIssuer = baseUrl + "/realms/" + realmName;
             token.setOtherClaims("iss", newIssuer);
-            token.setOtherClaims("macSerial", device.getSerialNumber());
             if (refreshTokenObject.getIssuer() ==  null) {
                 refreshTokenObject.setOtherClaims("iss", newIssuer);
             }
         }
+
         AccessTokenResponse response = builder.build();
 
 

@@ -126,7 +126,7 @@ public class PSSOAuthenticator  implements Authenticator {
                         idToken = validator.validate(tokenString, "psso");
                         username = idToken.getPreferredUsername();
                         sessionId = idToken.getSessionId();
-                        serial = idToken.getOtherClaims().get("macSerial").toString();
+                        serial = idToken.getOtherClaims().get("macSerial") != null ? idToken.getOtherClaims().get("macSerial").toString() : "";
 
                     } catch (Exception e) {
                         logger.error("Platform SSO: Invalid refresh token: " + e + "   " + requestData);
@@ -144,7 +144,7 @@ public class PSSOAuthenticator  implements Authenticator {
                         refreshToken = validator.validate(tokenString, "psso");
                         username = refreshToken.getPreferredUsername();
                         sessionId = refreshToken.getSessionId();
-                        serial = refreshToken.getOtherClaims().get("macSerial").toString();
+                        serial = refreshToken.getOtherClaims().get("macSerial") != null ? refreshToken.getOtherClaims().get("macSerial").toString() : "";
 
 
                     } catch (Exception e) {
@@ -378,7 +378,6 @@ public class PSSOAuthenticator  implements Authenticator {
             String tokenString = env.get("token").asText();
             String tokenType = env.get("token_type").asText();
 
-            String kid = env.get("kid").asText();
             // String username = env.get("username").asText();
             // TokenValidator validator = TokenValidatorFactory.getValidator(tokenType, context.getSession());
 
@@ -398,7 +397,7 @@ public class PSSOAuthenticator  implements Authenticator {
                         idToken = validator.validate(tokenString, "psso");
                         username = idToken.getPreferredUsername();
                         sessionId = idToken.getSessionId();
-                        serial = idToken.getOtherClaims().get("macSerial").toString();
+                        serial = idToken.getOtherClaims().get("macSerial") != null ? idToken.getOtherClaims().get("macSerial").toString() : "";
 
                     } catch (Exception e) {
                         logger.error("Platform SSO: Invalid ID token: " + e + "   " + requestData);
@@ -415,7 +414,7 @@ public class PSSOAuthenticator  implements Authenticator {
                         refreshToken = validator.validate(tokenString, "psso");
                         username = refreshToken.getPreferredUsername();
                         sessionId = refreshToken.getSessionId();
-                        serial = refreshToken.getOtherClaims().get("macSerial").toString();
+                        serial = refreshToken.getOtherClaims().get("macSerial") != null ? refreshToken.getOtherClaims().get("macSerial").toString() : "";
                     } catch (Exception e) {
                         logger.error("Platform SSO: Invalid refresh token: " + e + "   " + requestData);
                         context.attempted();
