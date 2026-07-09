@@ -1,3 +1,5 @@
+*Important:* If you or your institution are using this extension, please send a PR with the name of your institution under the file "Who uses this.md". This helps us to prioritize agnostic development of this extension.
+
 # Keycloak Platform Single Sign-on Extension
 
 This is a Keycloak extension that makes it compliant with [Apple Platform Single Sign-on for macOS](https://support.apple.com/en-ca/guide/deployment/dep7bbb05313/web).
