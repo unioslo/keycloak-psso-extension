@@ -19,10 +19,13 @@ package no.uio.keycloak.psso;
 
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWEObject;
+import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.Payload;
+import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.util.Base64URL;
+import com.nimbusds.jwt.SignedJWT;
 import jakarta.transaction.Transactional;
 import no.uio.keycloak.psso.token.*;
 import jakarta.persistence.EntityManager;
@@ -30,27 +33,31 @@ import jakarta.persistence.NoResultException;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
 import no.uio.keycloak.psso.token.JWSDecoder;
+import org.infinispan.functional.impl.Params;
 import org.jboss.logging.Logger;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.component.ComponentModel;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.credential.CredentialModel;
 import org.keycloak.events.EventBuilder;
-import org.keycloak.models.ClientModel;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
+import org.keycloak.events.EventType;
+import org.keycloak.models.*;
 
 
-
-import org.keycloak.models.UserModel;
+import org.keycloak.protocol.oidc.utils.OAuth2CodeParser;
 import org.keycloak.representations.AccessToken;
 import org.keycloak.representations.RefreshToken;
 import org.keycloak.services.managers.AppAuthManager;
 import org.keycloak.services.managers.AuthenticationManager;
 import org.keycloak.services.ui.extend.UiTabProvider;
 
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.security.PublicKey;
 import java.security.SecureRandom;
+import java.security.Signature;
 import java.security.cert.X509Certificate;
 
 import java.security.interfaces.ECPublicKey;
@@ -58,6 +65,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.*;
 
+import static no.uio.keycloak.psso.PSSOAuthenticator.loadPlatformSSOPublicKey;
 import static no.uio.keycloak.psso.token.JweBuilder.jsonObjectToMap;
 
 /**
@@ -328,6 +336,7 @@ public class PSSOResource {
 
         String header = session.getContext().getRequestHeaders().getHeaderString("client-request-id");
         JWSDecoder jwsDecoder = new JWSDecoder(session);
+
         Map<String,Object> claims;
         try {
             claims = jwsDecoder.parseAndVerify(jwsCompact);
@@ -371,25 +380,28 @@ public class PSSOResource {
                     .type("application/platformsso-login-response+jwt")
                     .build();
         }
-        String sub = claims.get("sub").toString();
+
+        String sub = claims.get("sub") != null ? claims.get("sub").toString() : null;
         UserModel user = session.users().getUserByUsername(realm, sub);
         String deviceUDID = device.getDeviceUDID();
         TokenIssuer tokenIssuer = new TokenIssuer(session);
         boolean isKeyExchange = claims.containsKey("request_type");
         boolean isGrantType = claims.containsKey("grant_type");
-        String refreshToken;
+        String refreshTokenString;
         Map<String,Object> assertionClaims;
 
         // Never happens in Secure Enclave authentication.
         // Will be used if we implement other types of authentication methods
         if (isGrantType && claims.get("grant_type").toString().equals("refresh_token")) {
             isRefreshTokenGrant = true;
-            logger.info("Platform SSO: Refresh token grant type requested by user "+sub);
-            refreshToken = claims.get("refresh_token").toString();
+            refreshTokenString = claims.get("refresh_token").toString();
             RefreshTokenValidator refreshTokenValidator = new RefreshTokenValidator(session);
             try {
-                refreshTokenValidator.validate(refreshToken, "psso");
-                tokenIssuer.setRefreshToken(refreshToken);
+                RefreshToken refreshToken =  refreshTokenValidator.validate(refreshTokenString, "psso");
+                tokenIssuer.setRefreshToken(refreshTokenString);
+                user = session.users().getUserById(realm, refreshToken.getSubject() );
+                logger.info("Platform SSO: Refresh token grant type requested by user "+sub);
+
             } catch (Exception e) {
                 logger.error("Error validating refresh token: " + e.getMessage());
                 Response response = Response.status(Response.Status.UNAUTHORIZED).build();
@@ -410,6 +422,74 @@ public class PSSOResource {
                         .type("application/platformsso-login-response+jwt")
                         .build();
             }
+        } else if (isGrantType && claims.get("grant_type").toString().equals("urn:ietf:params:oauth:grant-type:token-exchange")) {
+            logger.info("Platform SSO: OIDC flow starded for user "+sub);
+            String subjectToken = claims.get("subject_token").toString();
+            try {
+                URI uri = new URI(subjectToken);
+                String scheme = uri.getScheme();
+                Map<String,String> params = PSSOUtils.parseQueryParams(uri.getQuery());
+                String code = params.get("code");
+                String state = params.get("state");
+
+                EventBuilder event = new EventBuilder(
+                        session.getContext().getRealm(),
+                        session,
+                        session.getContext().getConnection()
+                );
+                event.event(EventType.CODE_TO_TOKEN);
+                OAuth2CodeParser.ParseResult parseResult =
+                        OAuth2CodeParser.parseCode(
+                                session,
+                                code,
+                                session.getContext().getRealm(),
+                                event  // event builder, optional
+                        );
+                if (parseResult.isIllegalCode() || parseResult.isExpiredCode()) {
+
+                    return Response.status(400).entity("Platform SSO: Invalid or expired code").build();
+                }
+                AuthenticatedClientSessionModel clientSession = parseResult.getClientSession();
+                ClientModel client = clientSession.getClient();
+                UserSessionModel userSession = clientSession.getUserSession();
+                UserModel userInRequest = userSession.getUser();
+                String clientId = client.getClientId();
+
+                ComponentModel pssoConfig = realm.getComponentsStream(realm.getId(), UiTabProvider.class.getName())
+                        .filter(c -> "Platform Single Sign-on".equals(c.getProviderId()))
+                        .findFirst()
+                        .orElse(null);
+                if (pssoConfig == null){
+                    return Response.status(Response.Status.NOT_FOUND)
+                            .type("application/platformsso-login-response+jwt")
+                            .build();
+                }
+
+                String configuredClientId = pssoConfig.get("clientIDOIDCFlow");
+
+                // Checks for the validity of the code
+
+                NonceService nonceValidator = new NonceService(session);
+
+                boolean nonceValid = nonceValidator.validateNonce(parseResult.getCodeData().getNonce(), state);
+                boolean userMatches = userInRequest.getUsername().equals(user.getUsername());
+                boolean clientIdMatches = clientId.equals(configuredClientId);
+                boolean schemeMatches = scheme.equals("com.apple.platformsso");
+                String scopes = parseResult.getCodeData().getScope();
+                logger.info("Platform SSO: Validating the code for user: "+sub+" with scopes: "+scopes);
+
+                if (!nonceValid || !userMatches || !clientIdMatches || !schemeMatches ) {
+                    logger.error("Platform SSO: Invalid code");
+                    return Response.status(400).entity("Platform SSO: Invalid or expired code").build();
+                }
+
+            } catch (Exception e) {
+                logger.error("Error parsing the Embedded assertion or other authentication: " + e.getMessage());
+                return Response.status(Response.Status.UNAUTHORIZED)
+                        .type("application/platformsso-login-response+jwt")
+                        .build();
+            }
+
         }
 
         for (String claim : claims.keySet()) {
@@ -435,7 +515,7 @@ public class PSSOResource {
 
         if (isKeyExchange) {
             typeHeaderValue = "platformsso-key-response+jwt";
-            logger.info("Platform SSO: Key request received for user "+sub);
+            logger.info("Platform SSO: Key request received for user "+sub+" of type "+claims.get("request_type").toString());
             if (claims.get("request_type").toString().equals("key_request")) {
                 payload = KeyExchangeUtils.keyRequestResponse(device, sub);
             } else if (claims.get("request_type").toString().equals("key_exchange")) {
@@ -490,7 +570,7 @@ public class PSSOResource {
                     typeHeaderValue
             );
             JWEObject parsed = JWEObject.parse(jwe);
-            logger.info("Platform SSO: User: "+sub+" on device: "+device.getSerialNumber()+" got an SSO token.");
+            logger.info("Platform SSO: User: "+user.getUsername()+" on device: "+device.getSerialNumber()+" got an SSO token.");
             return Response.ok()
                     .type("application/"+typeHeaderValue)
                     .entity(jwe)
@@ -661,6 +741,173 @@ public class PSSOResource {
         logger.info("Platform SSO: Device deleted. Serial number: " + serial);
 
         return Response.ok(device).build();
+
+    }
+
+    @POST
+    @Path("/authoidc")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getAuthOidc(
+            String body,
+            @HeaderParam("client-request-id") @DefaultValue("") String clientRequestId,
+            @QueryParam("login_hint") @DefaultValue ("") String loginHint
+
+
+
+    ) throws Exception {
+        KeycloakContext context = session.getContext();
+        String ip_address = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("X-Forwarded-For");
+        String userAgent = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("User-Agent");
+        logger.info("Platform SSO: Get authentication oidc start from: " + ip_address + ", User-Agent: " + userAgent + " for user " + loginHint);
+
+        String request = body.replaceFirst("^[Rr]equest=+", "");
+        String state;
+        String nonce;
+        String clientId;
+        String scope;
+        try {
+
+            SignedJWT jwt = SignedJWT.parse(request);
+            String kid = jwt.getHeader().getKeyID();
+
+            // Claims (the request data)
+            var claims = jwt.getJWTClaimsSet();
+            clientId = claims.getStringClaim("client_id");
+            scope    = claims.getStringClaim("scope");
+            state    = claims.getStringClaim("state");
+            nonce    = claims.getStringClaim("nonce");
+
+            Device device;
+            try {
+                JpaConnectionProvider jpa = session.getProvider(JpaConnectionProvider.class);
+                EntityManager em = jpa.getEntityManager();
+
+                device = em.createNamedQuery("Device.findBySignKeyId", Device.class)
+                        .setParameter("signingKeyId", kid)
+                        .getSingleResult();
+                if (device != null){
+                    logger.info("Platform SSO: Device found. Checking signature.");
+                } else {
+                    logger.error("Platform SSO: Device not found. Signature verification failed.");
+                    return Response.status(Response.Status.UNAUTHORIZED).build();
+                }
+                String deviceSignatureKey = device.getSigningKey();
+
+                JWSAlgorithm alg = jwt.getHeader().getAlgorithm();
+                if (!JWSAlgorithm.ES256.equals(alg)) {
+                    logger.error("Platform SSO: Unexpected JWS algorithm: " + alg + "(expected ES256)");
+                    return Response.status(Response.Status.UNAUTHORIZED)
+                            .type("application/platformsso-login-response+jwt")
+                            .build();
+                }
+                PublicKey devicePublicKey = loadPlatformSSOPublicKey(deviceSignatureKey);
+                ECDSAVerifier ecdsaVerifier = new ECDSAVerifier((ECPublicKey)
+                        devicePublicKey);
+                boolean ok = jwt.verify(ecdsaVerifier);
+                logger.info("Platform SSO: Device public key verified: " + ok);
+                if (!ok) {
+                    logger.error("Platform SSO: Signature verification failed.");
+                    return Response.status(Response.Status.UNAUTHORIZED)
+                            .type("application/platformsso-login-response+jwt")
+                            .build();
+                }
+
+
+
+            } catch (Exception e) {
+                logger.error("Platform SSO: No device found. Aborting.: " + e.getMessage());
+                logger.error("Platform SSO: Authentication attempt failed. ");
+
+                return Response.status(Response.Status.UNAUTHORIZED)
+                        .type("application/platformsso-login-response+jwt")
+                        .build();
+            }
+
+
+
+        } catch (Exception e) {
+            logger.error("Platform SSO: Error decrypting the JWT from the pre-authentication. "+e );
+            logger.error(e);
+            Response response = Response.status(Response.Status.BAD_REQUEST).build();
+            return response;
+
+        }
+
+        return PSSOUtils.redirectIdp(session, state,nonce, scope,loginHint, clientId);
+
+    }
+
+    @GET
+    @Path("/oidcflowcallback")
+    @Produces(MediaType.APPLICATION_JSON)
+
+    public Response getAccessCode(
+            @QueryParam("code") String code,
+            @QueryParam("state") String state,        // Optional, can be used to store RA info
+            @Context jakarta.ws.rs.core.UriInfo uriInfo
+
+    ) throws Exception {
+        String ip_address = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("X-Forwarded-For");
+        String userAgent = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("User-Agent");
+        logger.info("Platform SSO: Get authorization code request from: " + ip_address + ", User-Agent: " + userAgent);
+
+        if (code == null || code.isEmpty()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Missing authorization code")
+                    .build();
+        }
+
+        String redirectTo = "com.apple.platformsso://callback?code=" + code+"&state="+state;
+        KeycloakContext context = session.getContext();
+        return Response.status(302)
+                    .location(URI.create(redirectTo))
+                    .build();
+
+    }
+
+
+    @GET
+    @Path("/authurl")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getAuthURL(
+            @HeaderParam("client-request-id") @DefaultValue("") String clientRequestId,
+            @QueryParam("login_hint") @DefaultValue ("") String loginHint,
+            @QueryParam("scope") @DefaultValue("") String scope
+
+
+    ) throws Exception {
+
+        logger.info("Platform SSO: Get pre-authentication request on the OIDC flow");
+        KeycloakContext context = session.getContext();
+        String ip_address = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("X-Forwarded-For");
+        String userAgent = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("User-Agent");
+        logger.info("Platform SSO: Get authorization URL request from: " + ip_address + ", User-Agent: " + userAgent);
+
+        String state = UUID.randomUUID().toString();
+        NonceService nonceService = new NonceService(session);
+        String nonce = nonceService.createNonce(state);
+        String baseURL = context.getUri().getBaseUri().toString();
+        baseURL = baseURL.replaceAll("/$", "");
+        String realm = session.getContext().getRealm().getName();
+
+        String authUrl = baseURL + "/realms/"+realm+"/psso/authoidc?state="+state;
+
+        // Create a Map instead of a manual JSON string
+        Map<String, Object> response = new HashMap<>();
+        Map<String, String> authorizationRequest = new HashMap<>();
+        authorizationRequest.put("client_id", "psso-oidc");
+        authorizationRequest.put("redirect_uri", "com.apple.platformsso://callback");
+        authorizationRequest.put("response_type", "code");
+        authorizationRequest.put("scope", scope);
+        authorizationRequest.put("state", state);
+        authorizationRequest.put("nonce", nonce);
+        response.put("account_type", "Federated");
+        response.put("federation_protocol", "OIDC");
+        response.put("authorizationURL", authUrl);
+        response.put("authorizationRequest",authorizationRequest);
+
+        return Response.ok(response).build();
+
 
     }
 

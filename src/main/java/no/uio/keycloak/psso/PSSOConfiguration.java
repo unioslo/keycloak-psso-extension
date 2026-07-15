@@ -56,7 +56,21 @@ public class PSSOConfiguration implements UiTabProvider, UiTabProviderFactory<Co
                 .helpText("Registration Token for device registration")
                 .type(ProviderConfigProperty.PASSWORD)
                 .secret(true)
+                .add()
+                .property()
+                .name("clientIDOIDCFlow")
+                .label("Client ID for OIDC flow")
+                .helpText("Client ID for OIDC flow")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .add()
+                .property()
+                .name("clientSecretOIDCFlow")
+                .label("Client Secret for OIDC flow")
+                .helpText("Client Secret for OIDC flow")
+                .type(ProviderConfigProperty.PASSWORD)
+                .secret(true)
                 .add();
+
         return builder.build();
     }
 

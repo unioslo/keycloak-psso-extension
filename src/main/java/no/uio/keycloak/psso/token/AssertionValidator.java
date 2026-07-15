@@ -61,12 +61,7 @@ public class AssertionValidator {
             throw new IllegalArgumentException("Invalid issuer: " + iss);
         }
 
-        // ---- sub / username ----
-        String sub = (String) claims.get("sub");
-        if (sub == null || sub.isEmpty()) {
-            logger.error("Invalid sub");
-            throw new IllegalArgumentException("Missing subject (sub).");
-        }
+
 
         // ---- jwe_crypto.apv ----
         Map<String, Object> jweCrypto = (Map<String, Object>) claims.get("jwe_crypto");
@@ -106,6 +101,12 @@ public class AssertionValidator {
         String grantType = (String) claims.get("grant_type");
         boolean refreshTokenGrantType = grantType != null && grantType.equalsIgnoreCase("refresh_token") ;
 
+        // ---- sub / username ----
+        String sub = (String) claims.get("sub");
+        if ((sub == null || sub.isEmpty()) && !refreshTokenGrantType  ) {
+            logger.error("Invalid sub");
+            throw new IllegalArgumentException("Missing subject (sub).");
+        }
 
         Object requestType = claims.get("request_type");
         boolean keyExchange = false;
@@ -113,7 +114,11 @@ public class AssertionValidator {
             keyExchange = true;
         }
 
+        UserModel user = null;
+        if (sub != null) {
+            user = session.users().getUserByUsername(session.getContext().getRealm(), sub);
 
+        }
 
         Object refreshTokenObject = claims.get("refresh_token");
         if ((keyExchange || refreshTokenGrantType) && refreshTokenObject == null) {
@@ -121,20 +126,28 @@ public class AssertionValidator {
             throw new IllegalArgumentException("No refresh token was sent.");
         }
 
+
         if (refreshTokenObject != null) {
             String refreshTokenString = (String) refreshTokenObject;
             RefreshTokenValidator validator = new RefreshTokenValidator(session);
 
             try {
+                logger.info("Platform SSO: Validating refresh token.");
                RefreshToken refreshToken =  validator.validate(refreshTokenString, "psso");
-               if (!sub.equals(refreshToken.getSubject())) {
+               logger.info("Platform SSO: Refresh token is valid.");
+               String tokenSubject = refreshToken.getSubject();
+               if (sub == null) {
+                   user = session.users().getUserById(session.getContext().getRealm(), tokenSubject);
+               }
+
+               if (user == null || (sub != null && !sub.equals(user.getUsername()))) {
                    logger.error("Platform SSO: Refresh token does not match expected subject.");
                    throw new IllegalArgumentException("Invalid refresh token." );
                }
 
             } catch (Exception e) {
                 logger.error("Platform SSO: Invalid refresh token");
-                throw new IllegalArgumentException("Invalid refresh token." );
+                throw new IllegalArgumentException("Invalid refresh token. "+e.getMessage() );
 
             }
 
@@ -185,11 +198,10 @@ public class AssertionValidator {
         }
 
         // ---- grant_type ----
-        if (!"urn:ietf:params:oauth:grant-type:jwt-bearer".equals(grantType) && !"refresh_token".equals(grantType) && !grantType.equals("password")) {
+        if (!"urn:ietf:params:oauth:grant-type:jwt-bearer".equals(grantType) && !"refresh_token".equals(grantType) && !grantType.equals("password") && !grantType.equals("srv_challenge") && !grantType.equals("urn:ietf:params:oauth:grant-type:token-exchange")) {
             logger.error("Invalid grant type: " + grantType);
             throw new IllegalArgumentException("Invalid grant_type: " + grantType);
         }
-        UserModel user = session.users().getUserByUsername(session.getContext().getRealm(), sub);
 
         if (grantType.equals("password")) {
             String password = (String) claims.get("password");
@@ -206,6 +218,8 @@ public class AssertionValidator {
             throw new IllegalArgumentException("User is disabled.");
 
         }
+
+
 
         // ---- signKeyId ----
         String signKeyId = (String) claims.get("signKeyId");
