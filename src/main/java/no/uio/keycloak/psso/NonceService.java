@@ -29,7 +29,7 @@ import java.util.UUID;
  */
 public class NonceService {
 
-    private static final long NONCE_TTL_MS = 60_000; // 1 minute
+    private static final long NONCE_TTL_MS = 120_000; // 2 minute
     private final Cache<String, String> nonceCache;
     private static final Logger logger = Logger.getLogger(NonceService.class);
 

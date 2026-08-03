@@ -476,7 +476,12 @@ public class PSSOResource {
                 boolean clientIdMatches = clientId.equals(configuredClientId);
                 boolean schemeMatches = scheme.equals("com.apple.platformsso");
                 String scopes = parseResult.getCodeData().getScope();
-                logger.info("Platform SSO: Validating the code for user: "+sub+" with scopes: "+scopes);
+               // logger.debug("Platform SSO: STATE: SSO token: " + state);
+                //logger.debug("Platform SSO: Nonce valid: " + nonceValid);
+                //logger.info("Platform SSO: User matches: " + userMatches);
+                //logger.info("Platform SSO: Client ID matches: " + clientIdMatches);
+                //logger.info("Platform SSO: Scheme matches: " + schemeMatches);
+                //logger.info("Platform SSO: Validating the code for user: "+sub+" with scopes: "+scopes);
 
                 if (!nonceValid || !userMatches || !clientIdMatches || !schemeMatches ) {
                     logger.error("Platform SSO: Invalid code");
@@ -856,9 +861,9 @@ public class PSSOResource {
                     .entity("Missing authorization code")
                     .build();
         }
-
+        logger.info("Platform SSO: STATE: callback: " + state);
+        logger.info("Platform SSO: Code: callback: " + code);
         String redirectTo = "com.apple.platformsso://callback?code=" + code+"&state="+state;
-        KeycloakContext context = session.getContext();
         return Response.status(302)
                     .location(URI.create(redirectTo))
                     .build();
@@ -889,6 +894,9 @@ public class PSSOResource {
         String baseURL = context.getUri().getBaseUri().toString();
         baseURL = baseURL.replaceAll("/$", "");
         String realm = session.getContext().getRealm().getName();
+
+        logger.info("Platform SSO: STATE: Pre-authentication: " + state);
+        logger.info("Platform SSO: Nonce: Pre-authentication: " + nonce);
 
         String authUrl = baseURL + "/realms/"+realm+"/psso/authoidc?state="+state;
 

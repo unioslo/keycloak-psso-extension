@@ -24,10 +24,12 @@ public class PSSOConditional implements  ConditionalAuthenticator {
     public boolean matchCondition(AuthenticationFlowContext context) {
         AuthenticatorConfigModel config = context.getAuthenticatorConfig();
         String psso_auth_method_cond = config.getConfig().get("psso_auth_method");
+        String psso_auth_method_invert = config.getConfig().get("psso_auth_method_invert");
+
         String psso_auth_method = context.getAuthenticationSession().getUserSessionNotes().get("psso_auth_method");
 
         if (psso_auth_method != null && psso_auth_method_cond != null) {
-            return psso_auth_method.equals(psso_auth_method_cond);
+            return psso_auth_method.equals(psso_auth_method_cond) ^ psso_auth_method_invert.equals("true");
         }
         return false;
     }

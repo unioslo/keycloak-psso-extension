@@ -1,12 +1,9 @@
 package no.uio.keycloak.psso;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 import org.json.JSONObject;
 import org.keycloak.component.ComponentModel;
-import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.services.ui.extend.UiTabProvider;
@@ -17,16 +14,24 @@ import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.SecureRandom;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 
 public  class PSSOUtils {
 
     static Logger logger = Logger.getLogger(PSSOUtils.class);
+
+    // Shared client, reused for the lifetime of the provider. Building a new HttpClient per
+    // request leaks connections/threads (each instance owns a keep-alive pool + selector thread
+    // that is only reclaimed by GC), which starved Keycloak's worker pool and caused intermittent
+    // timeouts on the (self-directed) PAR call. HTTP/1.1 avoids flaky HTTP/2 upgrade negotiation.
+    private static final HttpClient PAR_CLIENT = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(Duration.ofSeconds(10))
+            .followRedirects(HttpClient.Redirect.NEVER)
+            .build();
+
     public static Response redirectIdp(KeycloakSession session, String state, String nonce, String scope, String loginHint, String client_id) {
         // Otherwise -> force redirect to IdP
         RealmModel realm = session.getContext().getRealm();
@@ -53,9 +58,6 @@ public  class PSSOUtils {
         String authorizationUrl = baseUrl + "/realms/" + realm.getName() + "/protocol/openid-connect/auth";
         String redirectUri = baseUrl + "/realms/" + realm.getName() + "/psso/oidcflowcallback";
 
-        // Generate PKCE parameters
-        String codeVerifier = generateCodeVerifier();
-
         String authUrl;
 
         String params = "client_id=" + clientId
@@ -64,25 +66,24 @@ public  class PSSOUtils {
                 + "&state=" + state
                 + "&nonce=" + nonce;
 
+        // logger.info("Platform SSO: STATE: Redirecting to IdP: " + state);
+        // logger.info("Platform SSO: Nonce: Redirecting to IdP: " + nonce);
         logger.debug("Platform SSO: parameters to be included in the url: " + params);
         // We make a PAR request to the idp
         // The idp will return a request_uri that we can use to redirect the user to the idp
         // This allows the client to remain confidential and not expose the client secret
             params = params+"&client_secret="+pssoConfig.get("clientSecretOIDCFlow");
-            HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(60))
-                    .followRedirects(HttpClient.Redirect.NORMAL)
-                    .build();
+            String url = baseUrl + "/realms/" + realm.getName() + "/protocol/openid-connect/ext/par/request";
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
-                    .uri(URI.create(baseUrl + "/realms/" + realm.getName() + "/protocol/openid-connect/ext/par/request"))
+                    .uri(URI.create(url))
                     .header("Content-Type", "application/x-www-form-urlencoded")
-                    .timeout(Duration.ofSeconds(70))
+                    .timeout(Duration.ofSeconds(10))
                     .POST(HttpRequest.BodyPublishers.ofString(params));
 
             HttpRequest request = requestBuilder.build();
             try {
-                logger.info("Platform SSO: Sending PAR request to the idp.");
-                java.net.http.HttpResponse<String> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+                java.net.http.HttpResponse<String> response = PAR_CLIENT.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+                logger.info("Platform SSO: Response status: "+response.statusCode());
                 if (response.statusCode() != 201 && response.statusCode() != 200) {
                     logger.error("Platform SSO: Error sending PAR request to the idp. Status code: " + response.statusCode());
                     logger.error("Platform SSO: Response body: " + response.body());
@@ -91,7 +92,9 @@ public  class PSSOUtils {
                 logger.info("Platform SSO: PAR request sent to the idp.");
                 JSONObject jsonResponse = new JSONObject(response.body());
                 String requestUri = jsonResponse.getString("request_uri");
-                authUrl = authorizationUrl + "?request_uri="+ requestUri+ "&client_id="+ clientId+"&login_hint="+loginHint;
+                authUrl = authorizationUrl + "?request_uri=" + URLEncoder.encode(requestUri, StandardCharsets.UTF_8)
+                        + "&client_id=" + URLEncoder.encode(clientId, StandardCharsets.UTF_8)
+                        + "&login_hint=" + URLEncoder.encode(loginHint, StandardCharsets.UTF_8);
             }catch (Exception e){
                 logger.error("Platform SSO: Error sending PAR request to the idp. " + e.getMessage());
                throw new RuntimeException("Platform SSO: There was an error sending a PAR request to the idp: "+e);
@@ -103,42 +106,6 @@ public  class PSSOUtils {
         logger.info("Platform SSO: Redirecting to IdP: " + authUrl);
         return Response.seeOther(URI.create(authUrl)).build();
 
-    }
-
-    /**
-     * Generates a cryptographically secure random code verifier for PKCE.
-     * The verifier is a 43-128 character base64url-encoded string.
-     */
-    private static String generateCodeVerifier() {
-        SecureRandom secureRandom = new SecureRandom();
-        byte[] codeVerifier = new byte[32]; // 32 bytes = 43 chars when base64url encoded
-        secureRandom.nextBytes(codeVerifier);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(codeVerifier);
-    }
-
-    /**
-     * Generates a code challenge from a code verifier using SHA256.
-     * The challenge is the base64url-encoded SHA256 hash of the verifier.
-     */
-    private static String generateCodeChallenge(String codeVerifier) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(codeVerifier.getBytes(StandardCharsets.UTF_8));
-            return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to generate code challenge", e);
-        }
-    }
-
-    /**
-     * Generates a cryptographically secure random nonce for OIDC.
-     * The nonce is a base64url-encoded random string used to prevent replay attacks.
-     */
-    static String generateNonce() {
-        SecureRandom secureRandom = new SecureRandom();
-        byte[] nonceBytes = new byte[32]; // 32 bytes of randomness
-        secureRandom.nextBytes(nonceBytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(nonceBytes);
     }
 
      static Map<String, String> parseQueryParams(String query) {
@@ -155,16 +122,5 @@ public  class PSSOUtils {
         return params;
     }
 
-    static JsonNode parseJson(String jsonString) {
-        try {
-            return new ObjectMapper().readTree(jsonString);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to parse JSON", e);
-        }
-    }
-
-    static boolean verifySignature (String signature, String payload, String key) {
-        return false;
-    }
 
 }

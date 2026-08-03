@@ -85,8 +85,19 @@ public class PSSOConditionalFactory implements ConditionalAuthenticatorFactory {
         property.setName("psso_auth_method");
         property.setLabel("Select the PSSO Authentication Method.");
         property.setType(ProviderConfigProperty.LIST_TYPE);
-        property.setOptions(List.of("PASSWORD", "SECURE_ENCLAVE"));
+        property.setOptions(List.of("PASSWORD", "SECURE_ENCLAVE", "OPENID"));
         property.setHelpText("If the authentication method used by the Platform Single Sign-on was used, this conditional will be set to \"true\".");
+        configProperties.add(property);
+    }
+
+    static {
+        ProviderConfigProperty property;
+        property = new ProviderConfigProperty();
+        property.setName("psso_auth_method_invert");
+        property.setLabel("Invert this conditional.");
+        property.setType(ProviderConfigProperty.BOOLEAN_TYPE);
+        property.setOptions(List.of("PASSWORD", "SECURE_ENCLAVE", "OPENID"));
+        property.setHelpText("If inverted, when the authentication method matches, this conditional will be set to \"false\".");
         configProperties.add(property);
     }
 
