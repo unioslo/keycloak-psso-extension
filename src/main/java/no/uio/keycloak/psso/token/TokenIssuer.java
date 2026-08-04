@@ -176,6 +176,15 @@ public class TokenIssuer {
             authSession.setClientNote(OIDCLoginProtocol.SCOPE_PARAM, scope);
         }
 
+        // Set the issuer note BEFORE generating tokens. For offline_access, generateRefreshToken()
+        // persists the offline client session and copies its notes at that moment; setting the
+        // ISSUER note afterwards would never reach the persisted (offline) session, so the access
+        // token minted on a later refresh/exchange would come back without an "iss" claim.
+        String baseUrl = session.getContext().getUri().getBaseUri().toString().replaceAll("/$", "");
+        String issuerUrl = baseUrl + "/realms/" + realm.getName();
+        clientSession.setNote(OIDCLoginProtocol.ISSUER, issuerUrl);
+        authSession.setClientNote(OIDCLoginProtocol.ISSUER, issuerUrl);
+
         authSession.setAuthNote(AuthenticationManager.SSO_AUTH, "true");
         authSession.setProtocol("openid-connect");
         Set<ClientScopeModel> scopes = TokenManager.getRequestedClientScopes(
@@ -223,19 +232,15 @@ public class TokenIssuer {
         refreshTokenObject.setOtherClaims("macSerial", device.getSerialNumber());
 
 
-        String issuer = token.getIssuer();
-        if (issuer == null) {
+        // Safety net for the in-memory tokens we return directly. The ISSUER note set above
+        // normally makes the generated tokens carry "iss" already, so this should not fire.
+        if (token.getIssuer() == null) {
             logger.warn("Issuer had to be generated. Check if your hostname is right.");
-            String baseUrl = session.getContext().getUri().getBaseUri().toString();
-            baseUrl = baseUrl.replaceAll("/$", "");
-            String realmName = session.getContext().getRealm().getName();
-            String newIssuer = baseUrl + "/realms/" + realmName;
-            token.setOtherClaims("iss", newIssuer);
-            if (refreshTokenObject.getIssuer() ==  null) {
-                refreshTokenObject.setOtherClaims("iss", newIssuer);
-            }
+            token.issuer(issuerUrl);
         }
-
+        if (refreshTokenObject.getIssuer() == null) {
+            refreshTokenObject.issuer(issuerUrl);
+        }
         AccessTokenResponse response = builder.build();
 
 

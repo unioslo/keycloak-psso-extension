@@ -27,7 +27,9 @@ public class PSSOConditional implements  ConditionalAuthenticator {
         String psso_auth_method_invert = config.getConfig().get("psso_auth_method_invert");
 
         String psso_auth_method = context.getAuthenticationSession().getUserSessionNotes().get("psso_auth_method");
-
+        logger.info("PSSO: User method: : " + psso_auth_method);
+        logger.info("PSSO: Condition method: : " + psso_auth_method_cond);
+        logger.info("PSSO: Invert condition: : " + psso_auth_method_invert);
         if (psso_auth_method != null && psso_auth_method_cond != null) {
             return psso_auth_method.equals(psso_auth_method_cond) ^ psso_auth_method_invert.equals("true");
         }
