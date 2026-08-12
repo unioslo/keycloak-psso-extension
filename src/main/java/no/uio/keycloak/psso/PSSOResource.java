@@ -877,7 +877,7 @@ public class PSSOResource {
     public Response getAuthURL(
             @HeaderParam("client-request-id") @DefaultValue("") String clientRequestId,
             @QueryParam("login_hint") @DefaultValue ("") String loginHint,
-            @QueryParam("scope") @DefaultValue("") String scope
+            @QueryParam("scope") @DefaultValue("openid profile") String scope
 
 
     ) throws Exception {
@@ -895,9 +895,7 @@ public class PSSOResource {
         baseURL = baseURL.replaceAll("/$", "");
         String realm = session.getContext().getRealm().getName();
 
-        logger.info("Platform SSO: STATE: Pre-authentication: " + state);
-        logger.info("Platform SSO: Nonce: Pre-authentication: " + nonce);
-
+        logger.info("Platform SSO: Scopes: pre-auth: " + scope);
         String authUrl = baseURL + "/realms/"+realm+"/psso/authoidc?state="+state;
 
         // Create a Map instead of a manual JSON string
