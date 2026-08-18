@@ -207,7 +207,11 @@ public class PSSOResource {
             logger.info("Updating existing device with serial number: " + serial+ ". Registered by user: " + registeredBy);
             existingDevice.setSigningKey(deviceSigningKey);
             existingDevice.setEncryptionKey(deviceEncryptionKey);
-            existingDevice.setKeyExchangeKey(keyExchangeKey);
+            // Apple sends the same context if re-registering, so we need to keep the old key.
+            // But if it doesn't exist, we register it. 
+            if (existingDevice.getKeyExchangeKey() == null || existingDevice.getKeyExchangeKey().isEmpty()) {
+                existingDevice.setKeyExchangeKey(keyExchangeKey);
+            }
             existingDevice.setSerialNumber(serial);
             existingDevice.setCategory("psso-mac");
             existingDevice.setCreationTime(System.currentTimeMillis());

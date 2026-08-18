@@ -66,8 +66,6 @@ public  class PSSOUtils {
                 + "&state=" + state
                 + "&nonce=" + nonce;
 
-        // logger.info("Platform SSO: STATE: Redirecting to IdP: " + state);
-        // logger.info("Platform SSO: Nonce: Redirecting to IdP: " + nonce);
         logger.debug("Platform SSO: parameters to be included in the url: " + params);
         // We make a PAR request to the idp
         // The idp will return a request_uri that we can use to redirect the user to the idp
