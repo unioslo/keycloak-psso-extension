@@ -38,6 +38,7 @@ import org.jboss.logging.Logger;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.keycloak.authentication.AuthenticationFlowError;
+import org.keycloak.common.util.Time;
 import org.keycloak.component.ComponentModel;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.credential.CredentialModel;
@@ -321,6 +322,124 @@ public class PSSOResource {
         return Response.ok(Map.of("status", "OK")).build();
 
     }
+
+    @POST
+    @Path("/cardenroll")
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response cardEnroll(
+            @HeaderParam("client-request-id") @DefaultValue("") String clientRequestId,
+            @FormParam("nonce") @DefaultValue("") String nonce,
+            @FormParam("accessToken") String accessToken,
+            @FormParam("userKey") String userKey,
+            @FormParam("userKeyId") String userKeyId,
+            @FormParam("cardSerial") String deviceUDID,
+            // new: the remaining inputs to the issuer's signed statement
+            @FormParam("issuedAt") String issuedAt,
+            @FormParam("generation") String generation,
+            @FormParam("issuerSignature") String issuerSignature,
+            @FormParam("issuerKeyId") String issuerKeyId
+    ) throws Exception {
+
+        String ip_address = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("X-Forwarded-For");
+        String userAgent = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("User-Agent");
+        logger.info("PlatformSSO: Enroll user request. From: " + ip_address + ", User-Agent: " + userAgent + " Client Request ID: " + clientRequestId);
+
+        RealmModel realm = session.getContext().getRealm();
+        ComponentModel pssoConfig = realm.getComponentsStream(realm.getId(), UiTabProvider.class.getName())
+                .filter(c -> "Platform Single Sign-on".equals(c.getProviderId()))
+                .findFirst()
+                .orElse(null);
+        if (pssoConfig == null) {
+            logger.error("PlatformSSO: No Platform Single Sign-on configuration found");
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+
+        String clientID = pssoConfig.get("clientIDforCardRegistration");
+        if (clientID == null || clientID.isBlank()) {
+            logger.error("PlatformSSO: clientIDforCardRegistration is not set: refusing card enrollment");
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE).build();
+        }
+
+        AccessToken token;
+        try {
+            // psso-card, not psso: /cardenroll plants a durable login credential, so a
+            // token leaked from an ordinary PSSO login must not be enough to drive it.
+            token = new AccessTokenValidator(session)
+                    .validate(accessToken, clientID);
+        } catch (Exception e) {
+            logger.error("PlatformSSO: Error validating access token: " + e.getMessage());
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+
+        // <-- your nonce validation, unchanged
+
+        // Fresh authentication. enroll-card.py asks for it with prompt=login and
+        // max_age=0, but those are requests to the server, not guarantees to us, so
+        // the check belongs here. Accessor is getAuthTime() on newer Keycloak.
+        Long authTime = token.getAuth_time();
+        if (authTime == null || authTime <= 0 || Time.currentTime() - authTime > 300) {
+            logger.warn("PlatformSSO: Rejected enrollment: authentication is stale (auth_time " + authTime + ")");
+            return Response.status(Response.Status.FORBIDDEN).build();
+        }
+
+        String username = token.getPreferredUsername();
+
+
+        UserModel user = session.users().getUserById(realm, token.getSubject());
+        if (user == null) {
+            logger.error("PlatformSSO: User not found: " + token.getSubject());
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+
+        // Provenance, before anything is stored. Note user.getUsername() rather than a
+        // request parameter: the statement was signed for a specific person, and
+        // rebuilding it from the token is what binds the two.
+        CardEnrollmentValidator.Result check;
+        try {
+            check = CardEnrollmentValidator.forConfig(pssoConfig)
+                    .validate(user.getUsername(), deviceUDID, userKey,
+                            userKeyId, issuedAt, generation,
+                            issuerSignature, issuerKeyId);
+        } catch (Exception e) {
+            logger.error("PlatformSSO: Card enrollment is not configured: " + e.getMessage());
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE).build();
+        }
+        if (!check.ok) {
+            logger.warn("PlatformSSO: Rejected enrollment for " + user.getUsername()
+                    + " (card " + deviceUDID + "): " + check.reason);
+            return Response.status(Response.Status.FORBIDDEN).build();
+        }
+        logger.info("PlatformSSO: Card enrollment accepted for " + user.getUsername()
+                + ": card " + deviceUDID + " generation " + generation
+                + " key " + check.point);
+
+        String serial = "Card: " + deviceUDID;
+
+        // Unchanged from here down.
+        List<CredentialModel> credentials = user.credentialManager()
+                .getStoredCredentialsByTypeStream(UserPSSOCredentialModel.TYPE)
+                .toList();
+        logger.debug("PlatformSSO: Found " + credentials.size() + " existing credentials for user " + user.getUsername());
+
+        for (CredentialModel existingCred : credentials) {
+            String id = existingCred.getId();
+            UserPSSOCredentialData credData = UserPSSOCredentialModel.getCredentialData(existingCred);
+            String currentSerial = credData.getDeviceUDID();
+            if (deviceUDID.equals(currentSerial)) {
+                user.credentialManager().removeStoredCredentialById(id);
+            }
+        }
+
+        UserPSSOCredentialModel model = UserPSSOCredentialModel.createCredential(username, userKey, userKeyId, deviceUDID, serial);
+        user.credentialManager().createStoredCredential(model);
+        logger.info("Platform SSO: User: " + username + " successfully registered a card for Tap to login: Serial: " + serial);
+        return Response.ok(Map.of("status", "OK")).build();
+    }
+
+
+
+
 
     @POST
     @Path("/token")

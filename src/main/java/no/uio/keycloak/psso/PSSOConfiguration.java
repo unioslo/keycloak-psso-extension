@@ -69,7 +69,40 @@ public class PSSOConfiguration implements UiTabProvider, UiTabProviderFactory<Co
                 .helpText("Client Secret for OIDC flow")
                 .type(ProviderConfigProperty.PASSWORD)
                 .secret(true)
+                .add()
+                .property()
+                .name("clientIDforCardRegistration")
+                .label("Client ID for card registration")
+                .helpText("Client ID for card registration")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .defaultValue("psso-card")
+                .add()
+                .property()
+                .name("caKeysForCardValidation")
+                .label("CA Keys for card validation")
+                .helpText("CA Keys for card validation. Users registering cards with keys will have hose validated against one of these keys. "
+                        + "Paste one or more certificates as PEM, one after the other: a bundle rather than a single "
+                        + "certificate so an issuer key can be rotated without every card issued under the old one "
+                        + "losing the ability to enroll. Key ids are derived from the keys, never entered by hand.")
+                .type(ProviderConfigProperty.TEXT_TYPE)
+                .add()
+                .property()
+                .name("cardSerialPrefixes")
+                .label("Accepted card serial prefixes")
+                .helpText("Comma-separated, e.g. \"CPLC:\". Leave empty to accept any card. "
+                        + "provision-card.sh falls back to a \"SIM:\" identity when a chip reports a blank CPLC, "
+                        + "so an empty list lets a simulated card enroll against a real account.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .add()
+                .property()
+                .name("cardEnrollMaxAgeDays")
+                .label("Maximum age of a card issuance record")
+                .helpText("Reject issuance records older than this many days. Signatures do not expire on their own, "
+                        + "so without a bound a record for a card decommissioned two years ago stays enrollable.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .defaultValue("30")
                 .add();
+
 
         return builder.build();
     }

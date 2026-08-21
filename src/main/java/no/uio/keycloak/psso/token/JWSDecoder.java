@@ -163,15 +163,29 @@ public class JWSDecoder {
                 .getStoredCredentialsByTypeStream(UserPSSOCredentialModel.TYPE)
                 .toList();
 
+        // Which key signed this assertion is stated in the header, so select on that
+        // first. Selecting on deviceUDID alone only works while a user's credentials
+        // are one-per-Mac: a card credential is keyed by the chip's identity, which
+        // the Mac never reports, so a tap would silently pick up that Mac's Secure
+        // Enclave credential and fail as a bad signature rather than a lookup miss.
+        String headerKid = jwt.getHeader().getKeyID();
+
         UserPSSOCredentialData credentialData = null;
+        UserPSSOCredentialData byDevice = null;
         for (CredentialModel existingCred : credentials) {
-            String id = existingCred.getId();
             UserPSSOCredentialData cd = UserPSSOCredentialModel.getCredentialData(existingCred);
-            String currentDeviceUDID = cd.getDeviceUDID();
-            if (deviceUDID.equals(currentDeviceUDID)) {
+            if (headerKid != null && headerKid.equals(cd.getUserKeyId())) {
                 credentialData = cd;
                 break;
             }
+            if (byDevice == null && deviceUDID != null && deviceUDID.equals(cd.getDeviceUDID())) {
+                byDevice = cd;
+            }
+        }
+        // Fall back to the device match so Secure Enclave logins keep working if an
+        // older credential was stored without a key id.
+        if (credentialData == null) {
+            credentialData = byDevice;
         }
 
         if (!user.getUsername().equals(jwt.getJWTClaimsSet().getSubject())) {
@@ -182,20 +196,52 @@ public class JWSDecoder {
         if (credentialData != null){
             userKey = credentialData.getUserSecureEnclaveKey();
         }else {
-            throw new Exception("No credential data found for user "+user.getUsername());
+            StringBuilder known = new StringBuilder();
+            for (CredentialModel c : credentials) {
+                UserPSSOCredentialData cd = UserPSSOCredentialModel.getCredentialData(c);
+                known.append(" [kid=").append(cd.getUserKeyId())
+                     .append(" device=").append(cd.getDeviceUDID()).append(']');
+            }
+            throw new Exception("No credential data found for user " + user.getUsername()
+                    + ": assertion kid " + headerKid + ", device " + deviceUDID
+                    + ", stored credentials:" + (known.length() == 0 ? " (none)" : known));
         }
 
 
         // verify header
 
-        ECPublicKey publicKey = convertX963ToECPublicKey(userKey);
+        // Not convertX963ToECPublicKey: that one takes base64(04||X||Y), which is what
+        // the Secure Enclave enrolment stores, while a card credential is stored in
+        // whichever shape provision-card.sh emitted. One parser for both, so the
+        // enrolled encoding is not a thing anyone has to keep in step by hand.
+        ECPublicKey publicKey = toECPublicKey(userKey);
 
         JWSVerifier verifier = new ECDSAVerifier(publicKey);
         if (!jwt.verify(verifier)) {
-            throw new IllegalArgumentException("Invalid embedded assertion signature");
+            throw new IllegalArgumentException("Invalid embedded assertion signature"
+                    + " (assertion kid " + headerKid
+                    + ", verified against credential kid " + credentialData.getUserKeyId()
+                    + " for device " + credentialData.getDeviceUDID() + ")");
         }
         logger.info("JWS signature valid.");
         return jwt.getJWTClaimsSet().getClaims();
+    }
+
+    /**
+     * Accepts every encoding a credential can be stored in -- base64(X9.63), JWK,
+     * bare hex point, or base64 SubjectPublicKeyInfo -- and returns the P-256 key.
+     */
+    public static ECPublicKey toECPublicKey(String storedKey) throws Exception {
+        byte[] point = CardEnrollmentValidator.uncompressedPoint(storedKey);
+        BigInteger x = new BigInteger(1, java.util.Arrays.copyOfRange(point, 1, 33));
+        BigInteger y = new BigInteger(1, java.util.Arrays.copyOfRange(point, 33, 65));
+
+        AlgorithmParameters parameters = AlgorithmParameters.getInstance("EC");
+        parameters.init(new ECGenParameterSpec("secp256r1"));
+        ECParameterSpec ecSpec = parameters.getParameterSpec(ECParameterSpec.class);
+
+        return (ECPublicKey) KeyFactory.getInstance("EC")
+                .generatePublic(new ECPublicKeySpec(new ECPoint(x, y), ecSpec));
     }
 
 
