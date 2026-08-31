@@ -316,7 +316,7 @@ public class PSSOResource {
             }
         }
 
-        UserPSSOCredentialModel model = UserPSSOCredentialModel.createCredential(username, userKey, userKeyId, deviceUDID, serial );
+        UserPSSOCredentialModel model = UserPSSOCredentialModel.createCredential(username, userKey, userKeyId, deviceUDID, serial, "mac" );
         user.credentialManager().createStoredCredential(model);
         logger.info ("Platform SSO: User: "+username+ " successfully registered for device: "+serial);
         return Response.ok(Map.of("status", "OK")).build();
@@ -414,7 +414,7 @@ public class PSSOResource {
                 + ": card " + deviceUDID + " generation " + generation
                 + " key " + check.point);
 
-        String serial = "Card: " + deviceUDID;
+        String serial = deviceUDID;
 
         // Unchanged from here down.
         List<CredentialModel> credentials = user.credentialManager()
@@ -431,7 +431,7 @@ public class PSSOResource {
             }
         }
 
-        UserPSSOCredentialModel model = UserPSSOCredentialModel.createCredential(username, userKey, userKeyId, deviceUDID, serial);
+        UserPSSOCredentialModel model = UserPSSOCredentialModel.createCredential(username, userKey, userKeyId, deviceUDID, serial, "card");
         user.credentialManager().createStoredCredential(model);
         logger.info("Platform SSO: User: " + username + " successfully registered a card for Tap to login: Serial: " + serial);
         return Response.ok(Map.of("status", "OK")).build();

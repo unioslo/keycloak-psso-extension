@@ -39,9 +39,18 @@ public class UserPSSOCredentialModel extends CredentialModel{
     }
 
     // Example factory method if you need to wrap something from EduMFA
-    public static UserPSSOCredentialModel createCredential (String userId, String userSecureEnclaveKey, String userKeyId,  String deviceUDID, String serial) {
+    public static UserPSSOCredentialModel createCredential (String userId, String userSecureEnclaveKey, String userKeyId,  String deviceUDID, String serial, String credType) {
         UserPSSOCredentialModel model = new UserPSSOCredentialModel();
-        String label = "Mac serial number: " + serial;
+        String label = "";
+        if (credType.equals("mac")) {
+            label = "Mac serial number: " + serial;
+        }else  if (credType.equals("card")) {
+            label = "Card serial number: " + serial;
+
+        }else {
+            label = serial;
+        }
+
         model.setUserLabel(label);
 
         try {
