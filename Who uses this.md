@@ -5,3 +5,4 @@ Institutions that are using this extension:
 Institutions that are planning to use this extension:
 
 - Sunstone Institute
+- Freie Universitaet Berlin (Free University Berlin)
