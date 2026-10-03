@@ -38,6 +38,20 @@
         }
     }
 
+    // For the one rejection that scanning again cannot fix. Offering "Scan again" here
+    // would contradict the message, which already says to use a password.
+    function showNoRescan(text) {
+        status(text);
+        var btn = document.getElementById("psso-badge-rescan");
+        if (btn) {
+            btn.style.display = "none";
+        }
+        var fallback = document.getElementById("psso-badge-fallback");
+        if (fallback) {
+            fallback.focus();
+        }
+    }
+
     function b64urlDecode(s) {
         s = s.replace(/-/g, "+").replace(/_/g, "/");
         while (s.length % 4) {
@@ -102,7 +116,8 @@
             // cancelled | error | invalid | timeout | unavailable
             var reason = (err && err.message) || "error";
             if (reason === "unavailable") {
-                showRescan(MSG.noCamera);
+                // Not recoverable by scanning again: point at the password button instead.
+                showNoRescan(MSG.noCamera);
             } else if (reason === "cancelled") {
                 showRescan(MSG.cancelled);
             } else if (reason === "timeout") {
