@@ -910,7 +910,7 @@ public class PSSOResource {
             scope    = claims.getStringClaim("scope");
             state    = claims.getStringClaim("state");
             nonce    = claims.getStringClaim("nonce");
-
+            logger.info("Platform SSO: Get authentication oidc request received for client: " + clientId + " with scope: " + scope);
             Device device;
             try {
                 JpaConnectionProvider jpa = session.getProvider(JpaConnectionProvider.class);
@@ -1024,7 +1024,6 @@ public class PSSOResource {
         baseURL = baseURL.replaceAll("/$", "");
         String realm = session.getContext().getRealm().getName();
 
-        logger.info("Platform SSO: Scopes: pre-auth: " + scope);
         String authUrl = baseURL + "/realms/"+realm+"/psso/authoidc?state="+state;
 
         // Create a Map instead of a manual JSON string

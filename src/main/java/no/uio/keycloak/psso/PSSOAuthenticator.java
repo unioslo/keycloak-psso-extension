@@ -33,6 +33,7 @@ import org.keycloak.authentication.authenticators.util.AcrStore;
 import org.keycloak.common.util.Time;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.credential.CredentialModel;
+import org.keycloak.events.Errors;
 import org.keycloak.models.*;
 import org.keycloak.organization.protocol.mappers.oidc.OrganizationScope;
 import org.keycloak.organization.utils.Organizations;
@@ -100,6 +101,7 @@ public class PSSOAuthenticator  implements Authenticator {
                 logger.error("Platform SSO: Error parsing SSO Token. " + e.getMessage());
                 logger.error("Platform SSO: Authentication attempt failed. " + requestData);
 
+                context.getEvent().error(Errors.INVALID_TOKEN);
                 context.attempted();
                 return;
             }
@@ -159,12 +161,26 @@ public class PSSOAuthenticator  implements Authenticator {
 
             if (verifySignature(context, env, ssoIdB64, sigB64, signatureBytes,serial)) {
                 if (username != null && !username.equals(preferred_username)) {
-                    logger.error("Platform SSO: Username and preferred_username don't match. Yser: " + username + " " + requestData);
+                    logger.error("Platform SSO: Username and preferred_username don't match. User: " + username + " " + requestData);
+                    context.getEvent().detail("psso_username", String.valueOf(username)).error(Errors.INVALID_TOKEN);
                     context.attempted();
                     return;
                 }
-                if (!session.users().getUserByUsername(realm, username).isEnabled()) {
-                    logger.error("Platform SSO: Username and preferred_username don't match. Yser: " + username + " " + requestData);
+
+                // One lookup, reused below. The null check matters: the username comes from a
+                // token that was valid when it was issued, and the account can have been
+                // deleted or renamed since. Without it this is an NPE and a 500 rather than a
+                // clean fallthrough to the password form.
+                UserModel user = session.users().getUserByUsername(realm, username);
+                if (user == null) {
+                    logger.error("Platform SSO: Token names a user that no longer exists: " + username + " " + requestData);
+                    context.getEvent().detail("psso_username", String.valueOf(username)).error(Errors.USER_NOT_FOUND);
+                    context.attempted();
+                    return;
+                }
+                if (!user.isEnabled()) {
+                    logger.error("Platform SSO: User is disabled: " + username + " " + requestData);
+                    context.getEvent().user(user).error(Errors.USER_DISABLED);
                     context.attempted();
                     return;
                 }
@@ -180,6 +196,7 @@ public class PSSOAuthenticator  implements Authenticator {
                 } catch (Exception e) {
                     logger.error("Platform SSO: No device found. Aborting.: " + e.getMessage());
                     logger.error("Platform SSO: Authentication attempt failed. "+requestData);
+                    context.getEvent().user(user).detail("psso_kid", String.valueOf(kid)).error(Errors.INVALID_TOKEN);
                     context.attempted();
                     return;
                 }
@@ -187,7 +204,6 @@ public class PSSOAuthenticator  implements Authenticator {
                 context.getAuthenticationSession().setUserSessionNote("psso_auth_method",device.getRegistrationMethod().name());
                 logger.info("Platform SSO: User authentication method: "+device.getRegistrationMethod().name());
                 if (refreshToken != null || idToken != null) {
-                        UserModel user = context.getSession().users().getUserByUsername(realm, username);
                     context.setUser(user);
                     if (sessionId != null) {
 
@@ -371,6 +387,7 @@ public class PSSOAuthenticator  implements Authenticator {
                 logger.error("Platform SSO: Error parsing SSO Token. " + e.getMessage());
                 logger.error("Platform SSO: Authentication attempt failed. " + requestData);
 
+                context.getEvent().error(Errors.INVALID_TOKEN);
                 context.attempted();
                 return;
             }
@@ -427,6 +444,14 @@ public class PSSOAuthenticator  implements Authenticator {
                 if (idToken != null || refreshToken != null) {
 
                     UserModel user = context.getSession().users().getUserByUsername(realm, username);
+                    if (user == null) {
+                        // Same guard as in authenticate(): setUser(null) on a token whose
+                        // account has since been removed is not a clean failure.
+                        logger.error("Platform SSO: Token names a user that no longer exists: " + username + " " + requestData);
+                        context.getEvent().detail("psso_username", String.valueOf(username)).error(Errors.USER_NOT_FOUND);
+                        context.attempted();
+                        return;
+                    }
                     context.setUser(user);
 
                     if (sessionId != null) {
@@ -524,6 +549,9 @@ public class PSSOAuthenticator  implements Authenticator {
         NonceService nonceService = new NonceService(context.getSession());
         if (!nonceService.validateNonce(nonce, clientId)) {
             logger.error("Platform SSO: Nonce is wrong. Aborting");
+            // A nonce that was never issued, or has been used already, is the clearest
+            // replay signal there is. Worth an event even though nothing is locked out.
+            context.getEvent().detail("psso_username", String.valueOf(username)).error(Errors.INVALID_TOKEN);
             return false;
 
         }
@@ -533,6 +561,7 @@ public class PSSOAuthenticator  implements Authenticator {
         long now = Instant.now().getEpochSecond();
         if (Math.abs(now - signedAt) > 5) {
             logger.error("Platform SSO: Expired login request. "+requestData);
+            context.getEvent().detail("psso_username", String.valueOf(username)).error(Errors.EXPIRED_CODE);
             context.attempted();
             return false;
         }
@@ -547,12 +576,14 @@ public class PSSOAuthenticator  implements Authenticator {
         } catch (Exception e) {
             logger.error("Platform SSO: Error finding device by signingKeyId: " + kid+"- "+ e.getMessage());
             logger.error("Platform SSO: Authentication attempt failed. "+requestData);
+            context.getEvent().detail("psso_kid", String.valueOf(kid)).error(Errors.INVALID_TOKEN);
             context.attempted();
             return false;
         }
         if (device == null) {
             logger.error("Platform SSO: Error finding device by signingKeyId: " + kid+"- ");
             logger.error("Platform SSO: Authentication attempt failed. "+requestData);
+            context.getEvent().detail("psso_kid", String.valueOf(kid)).error(Errors.INVALID_TOKEN);
             context.attempted();
             return  false;
         }
@@ -560,6 +591,8 @@ public class PSSOAuthenticator  implements Authenticator {
 
             UserModel user = context.getSession().users().getUserByUsername(context.getRealm(), username);
             if (user == null) {
+                    logger.error("Platform SSO: Envelope names a user that does not exist: " + username + " " + requestData);
+                    context.getEvent().detail("psso_username", String.valueOf(username)).error(Errors.USER_NOT_FOUND);
                     context.attempted();
                     return false;
             }
@@ -574,11 +607,23 @@ public class PSSOAuthenticator  implements Authenticator {
             verifier.initVerify(devicePublicKey);
             verifier.update(dataToVerify);
             boolean ok = verifier.verify(signatureBytes);
-            logger.info("Platform SSO: Device public key verified: " + ok);
-            return ok;
+            if (!ok) {
+                // The one failure that is unambiguously someone trying it on: a live nonce,
+                // a fresh timestamp, a registered device, a real user - and a signature that
+                // does not hold. Previously this returned quietly at INFO.
+                logger.error("Platform SSO: Signature did not verify. User: " + username
+                        + " Device: " + device.getSerialNumber() + " " + requestData);
+                context.getEvent().user(user)
+                        .detail("psso_device_serial", String.valueOf(device.getSerialNumber()))
+                        .error(Errors.INVALID_USER_CREDENTIALS);
+                return false;
+            }
+            logger.info("Platform SSO: Device public key verified: true");
+            return true;
         }catch (Exception e){
             logger.error("Platform SSO: Error verifying SSO Token. " + e.getMessage());
             logger.error("Platform SSO: Authentication attempt failed. "+requestData+ " User: " + username+" Device: " + device.getSerialNumber());
+            context.getEvent().user(user).error(Errors.INVALID_USER_CREDENTIALS);
             context.attempted();
             return false;
         }
