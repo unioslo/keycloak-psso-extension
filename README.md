@@ -59,7 +59,7 @@ The purpose of this article is mostly to help developers on how to adapt our SSO
 
 It would be very nice if other developers could join our efforts, especially when it comes to the SSO Extension and its processing of SAML flows. If you can and want to help, send PR’s our way or drop as a line on the #Keycloak channel at the MacAdmins [Slack](https://macadmins.slack.com/archives/C09UKEDGBEH) 
 
-Please subscribe to our mailing list for discussions and announcements: https://sympa.uio.no/uio.no/admin/keycloak-psso
+Please subscribe to our mailing list for discussions and announcements: https://sympa.uio.no/usit.uio.no/admin/keycloak-psso
 
 
 
