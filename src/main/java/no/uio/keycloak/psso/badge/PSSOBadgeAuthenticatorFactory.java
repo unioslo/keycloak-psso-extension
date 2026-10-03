@@ -81,11 +81,11 @@ public class PSSOBadgeAuthenticatorFactory implements AuthenticatorFactory {
     }
 
     /**
-     * Must be true. The authenticator implements CredentialValidator and reports
-     * requiresUser() == false, so when a user <em>is</em> already set and has no badge,
-     * DefaultAuthenticationFlow would otherwise throw CREDENTIAL_SETUP_REQUIRED instead of
-     * falling through to the next alternative. Ordinary badge logins never reach that check,
-     * but step-up and re-authentication paths can.
+     * True, though it is now belt and braces. The CREDENTIAL_SETUP_REQUIRED branch this
+     * guarded against (DefaultAuthenticationFlow:462-468) is reached only for an
+     * {@code instanceof CredentialValidator}, which the authenticator deliberately no
+     * longer is - see the note on PSSOBadgeAuthenticator. Keeping it true means a user
+     * without a badge falls through to the next alternative either way.
      */
     @Override
     public boolean isUserSetupAllowed() {

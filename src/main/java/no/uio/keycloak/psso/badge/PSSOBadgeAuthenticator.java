@@ -24,7 +24,6 @@ import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.authentication.Authenticator;
-import org.keycloak.authentication.CredentialValidator;
 import org.keycloak.authentication.authenticators.browser.AbstractUsernameFormAuthenticator;
 import org.keycloak.authentication.authenticators.util.AuthenticatorUtils;
 import org.keycloak.credential.CredentialModel;
@@ -46,10 +45,19 @@ import org.keycloak.models.UserModel;
  * <p>Note the brute-force handling below. A custom authenticator gets <em>none</em> of
  * Keycloak's protection for free, and every way of getting it wrong fails open silently.
  *
+ * <p>Deliberately <em>not</em> a {@code CredentialValidator}, even though it validates a
+ * credential. When several ALTERNATIVE executions compete,
+ * {@code DefaultAuthenticationFlow:436} does not run the one the admin put first - it runs
+ * {@code createAuthenticationSelectionList(...).get(0)}. And with no user established yet,
+ * {@code AuthenticationSelectionResolver} (:92-108) puts every userless
+ * {@code CredentialValidator} *after* the ordinary authenticators, so the username/password
+ * form would win the badge form every time regardless of flow order. Staying a plain
+ * Authenticator keeps us in {@code nonCredentialExecutions}, which is in flow order.
+ *
  * @author <a href="mailto:franciaa@uio.no">Francis Augusto Medeiros-Logeay</a>
  * @version $Revision: 1 $
  */
-public class PSSOBadgeAuthenticator implements Authenticator, CredentialValidator<PSSOBadgeCredentialProvider> {
+public class PSSOBadgeAuthenticator implements Authenticator {
 
     private static final Logger logger = Logger.getLogger(PSSOBadgeAuthenticator.class);
 
@@ -169,8 +177,7 @@ public class PSSOBadgeAuthenticator implements Authenticator, CredentialValidato
         // Nothing to require: badges are issued out of band, not self-enrolled.
     }
 
-    @Override
-    public PSSOBadgeCredentialProvider getCredentialProvider(KeycloakSession session) {
+    private PSSOBadgeCredentialProvider getCredentialProvider(KeycloakSession session) {
         return (PSSOBadgeCredentialProvider) session.getProvider(
                 CredentialProvider.class, PSSOBadgeCredentialProviderFactory.PROVIDER_ID);
     }
