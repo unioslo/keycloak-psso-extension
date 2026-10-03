@@ -41,7 +41,13 @@ import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.common.util.Time;
 import org.keycloak.component.ComponentModel;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
+import no.uio.keycloak.psso.badge.PSSOBadgeCredentialData;
+import no.uio.keycloak.psso.badge.PSSOBadgeCredentialModel;
+import no.uio.keycloak.psso.badge.PSSOBadgeCredentialProvider;
+import no.uio.keycloak.psso.badge.PSSOBadgeCredentialProviderFactory;
+import no.uio.keycloak.psso.badge.PSSOBadgePayload;
 import org.keycloak.credential.CredentialModel;
+import org.keycloak.credential.CredentialProvider;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.events.EventType;
 import org.keycloak.models.*;
@@ -1038,6 +1044,198 @@ public class PSSOResource {
         return Response.ok(response).build();
 
 
+    }
+
+
+    // ---------------------------------------------------------------------------------
+    // QR badges. A badge is a printed lanyard tag a pupil scans to sign in to a shared
+    // Mac; see no.uio.keycloak.psso.badge.
+    // ---------------------------------------------------------------------------------
+
+    /**
+     * Bearer auth plus the psso-admin/mac-admin role, as the /device endpoints do. Returns
+     * the caller's token, or null having already logged the reason.
+     */
+    private AccessToken requireMacAdmin(String action) {
+        AuthenticationManager.AuthResult authResult =
+                new AppAuthManager.BearerTokenAuthenticator(session)
+                        .authenticate();
+
+        if (authResult == null) {
+            logger.error("Platform SSO: Attempt to " + action + " failed. Authentication Failed");
+            return null;
+        }
+
+        AccessToken token = authResult.token();
+        if ((token.getResourceAccess("psso-admin") == null) || !token.getResourceAccess("psso-admin")
+                .isUserInRole("mac-admin")) {
+            logger.error("Platform SSO: Attempt to " + action + " failed. Insufficient rights to do this.");
+            return null;
+        }
+        return token;
+    }
+
+    private UserModel resolveBadgeUser(RealmModel realm, String userId, String username) {
+        if (userId != null && !userId.isBlank()) {
+            return session.users().getUserById(realm, userId);
+        }
+        if (username != null && !username.isBlank()) {
+            return session.users().getUserByUsername(realm, username);
+        }
+        return null;
+    }
+
+    /**
+     * Issues a QR badge and returns its payload. This is the only time the payload exists
+     * anywhere outside the printed tag: only its SHA-256 is stored, so a lost badge is
+     * reissued, never recovered.
+     */
+    @POST
+    @Path("/badgeissue")
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response badgeIssue(
+            @HeaderParam("Authorization") @DefaultValue("") String authorization,
+            @FormParam("userId") String userId,
+            @FormParam("username") String username
+    ) throws Exception {
+
+        String ip_address = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("X-Forwarded-For");
+        String userAgent = session.getContext().getHttpRequest().getHttpHeaders().getRequestHeaders().getFirst("User-Agent");
+        logger.info("Platform SSO: Badge issue requested from: " + ip_address + ", User-Agent: " + userAgent);
+
+        AccessToken token = requireMacAdmin("issue a badge");
+        if (token == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+
+        RealmModel realm = session.getContext().getRealm();
+        UserModel user = resolveBadgeUser(realm, userId, username);
+        if (user == null) {
+            logger.error("Platform SSO: Badge issue failed. User not found.");
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+
+        PSSOBadgeCredentialProvider provider = (PSSOBadgeCredentialProvider) session.getProvider(
+                CredentialProvider.class, PSSOBadgeCredentialProviderFactory.PROVIDER_ID);
+
+        int nextSequence = 1;
+        for (CredentialModel existing : provider.getBadges(user)) {
+            int seq = PSSOBadgeCredentialModel.getCredentialData(existing).getBadgeSequence();
+            if (seq >= nextSequence) {
+                nextSequence = seq + 1;
+            }
+        }
+
+        String issuer = token.getPreferredUsername();
+        String badgeToken = PSSOBadgePayload.newToken();
+
+        PSSOBadgeCredentialModel credential =
+                PSSOBadgeCredentialModel.createCredential(nextSequence, badgeToken, issuer);
+        provider.createCredential(realm, user, credential);
+
+        String payload = new PSSOBadgePayload(user.getId(), nextSequence, badgeToken).encode();
+
+        logger.info("Platform SSO: Badge #" + nextSequence + " issued for user "
+                + user.getUsername() + " by " + issuer);
+
+        // The payload itself is deliberately not logged.
+        return Response.ok(Map.of(
+                "payload", payload,
+                "sequence", nextSequence,
+                "userId", user.getId(),
+                "username", user.getUsername())).build();
+    }
+
+    /** Lists a user's badges. No secret material: the hash never leaves the database. */
+    @GET
+    @Path("/badge")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listBadges(
+            @HeaderParam("Authorization") @DefaultValue("") String authorization,
+            @QueryParam("userId") String userId,
+            @QueryParam("username") String username
+    ) throws Exception {
+
+        if (requireMacAdmin("list badges") == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+
+        RealmModel realm = session.getContext().getRealm();
+        UserModel user = resolveBadgeUser(realm, userId, username);
+        if (user == null) {
+            logger.error("Platform SSO: Badge listing failed. User not found.");
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+
+        PSSOBadgeCredentialProvider provider = (PSSOBadgeCredentialProvider) session.getProvider(
+                CredentialProvider.class, PSSOBadgeCredentialProviderFactory.PROVIDER_ID);
+
+        List<Map<String, Object>> badges = new ArrayList<>();
+        for (CredentialModel credential : provider.getBadges(user)) {
+            PSSOBadgeCredentialData data = PSSOBadgeCredentialModel.getCredentialData(credential);
+            Map<String, Object> entry = new HashMap<>();
+            entry.put("credentialId", credential.getId());
+            entry.put("sequence", data.getBadgeSequence());
+            entry.put("label", data.getLabel());
+            entry.put("issuedBy", data.getIssuedBy());
+            entry.put("createdDate", credential.getCreatedDate());
+            badges.add(entry);
+        }
+
+        return Response.ok(badges).build();
+    }
+
+    /** Revokes a single badge. Deleting one tag does not touch the pupil's other credentials. */
+    @DELETE
+    @Path("/badge/{credentialId}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response deleteBadge(
+            @HeaderParam("Authorization") @DefaultValue("") String authorization,
+            @PathParam("credentialId") String credentialId,
+            @QueryParam("userId") String userId,
+            @QueryParam("username") String username
+    ) throws Exception {
+
+        AccessToken token = requireMacAdmin("delete a badge");
+        if (token == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+
+        if (credentialId == null || credentialId.isBlank()) {
+            logger.error("Platform SSO: Badge deletion failed. No credential id was sent.");
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+
+        RealmModel realm = session.getContext().getRealm();
+        UserModel user = resolveBadgeUser(realm, userId, username);
+        if (user == null) {
+            logger.error("Platform SSO: Badge deletion failed. User not found.");
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+
+        PSSOBadgeCredentialProvider provider = (PSSOBadgeCredentialProvider) session.getProvider(
+                CredentialProvider.class, PSSOBadgeCredentialProviderFactory.PROVIDER_ID);
+
+        // Check the credential is a badge on this user before removing it, so this endpoint
+        // cannot be turned into a way of deleting arbitrary credentials by id.
+        boolean isBadgeOfUser = provider.getBadges(user).stream()
+                .anyMatch(c -> credentialId.equals(c.getId()));
+        if (!isBadgeOfUser) {
+            logger.error("Platform SSO: Badge deletion failed. Credential " + credentialId
+                    + " is not a badge belonging to " + user.getUsername());
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+
+        if (!provider.deleteCredential(realm, user, credentialId)) {
+            logger.error("Platform SSO: Badge deletion failed for credential " + credentialId);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
+        }
+
+        logger.info("Platform SSO: Badge " + credentialId + " revoked for user "
+                + user.getUsername() + " by " + token.getPreferredUsername());
+
+        return Response.ok(Map.of("status", "OK", "credentialId", credentialId)).build();
     }
 
 }

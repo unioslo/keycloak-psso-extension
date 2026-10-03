@@ -1,3 +1,5 @@
 no.uio.keycloak.psso.PSSOAuthenticatorFactory
 no.uio.keycloak.psso.PSSORegistrationAuthenticatorFactory
 no.uio.keycloak.psso.PSSOConditionalFactory
+no.uio.keycloak.psso.badge.PSSOBadgeAuthenticatorFactory
+no.uio.keycloak.psso.badge.PSSOScopeConditionalFactory
