@@ -111,7 +111,10 @@ public class PSSOAuthenticator  implements Authenticator {
             String tokenString = env.get("token").asText();
             String tokenType = env.get("token_type").asText();
             String kid = env.get("kid").asText();
-
+            String reauthChallenge = env.get("reauth_challenge") != null ? env.get("reauth_challenge").asText() : "none";
+            // Token to be used when sending a reauthentiction challenge
+            String stepUpToken = PSSOUtils.createStepUpToken(
+                    context.getSession(), context.getRealm(), reauthChallenge, "psso");
 
             String username = null;
             String sessionId = null;
@@ -133,6 +136,7 @@ public class PSSOAuthenticator  implements Authenticator {
                     } catch (Exception e) {
                         logger.error("Platform SSO: Invalid refresh token: " + e + "   " + requestData);
                         Response challenge = context.form()
+                                .setAttribute("stepUpToken", stepUpToken)
                                 .createForm("reauthentication.ftl");
                         context.challenge(challenge);
                         return;
@@ -152,6 +156,7 @@ public class PSSOAuthenticator  implements Authenticator {
                     } catch (Exception e) {
                         logger.error("Platform SSO: Invalid refresh token: " + e + "   " + requestData);
                         Response challenge = context.form()
+                                .setAttribute("stepUpToken", stepUpToken)
                                 .createForm("reauthentication.ftl");
                         context.challenge(challenge);
                         return;
@@ -245,6 +250,7 @@ public class PSSOAuthenticator  implements Authenticator {
                                     return;
                                 }
                                 Response challenge = context.form()
+                                        .setAttribute("stepUpToken", stepUpToken)
                                         .createForm("reauthentication.ftl");
                                 context.challenge(challenge);
 
@@ -320,6 +326,7 @@ public class PSSOAuthenticator  implements Authenticator {
                             }
 
                             Response challenge = context.form()
+                                    .setAttribute("stepUpToken", stepUpToken)
                                     .createForm("reauthentication.ftl");
                             context.challenge(challenge);
                             return;

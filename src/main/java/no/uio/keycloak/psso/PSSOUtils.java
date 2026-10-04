@@ -3,9 +3,18 @@ package no.uio.keycloak.psso;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 import org.json.JSONObject;
+import org.keycloak.common.util.Time;
 import org.keycloak.component.ComponentModel;
+import org.keycloak.crypto.KeyUse;
+import org.keycloak.crypto.KeyWrapper;
+import org.keycloak.crypto.SignatureProvider;
+import org.keycloak.crypto.SignatureSignerContext;
+import org.keycloak.jose.jws.JWSBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.utils.KeycloakModelUtils;
+import org.keycloak.representations.JsonWebToken;
+import org.keycloak.services.Urls;
 import org.keycloak.services.ui.extend.UiTabProvider;
 
 import java.net.URI;
@@ -119,6 +128,37 @@ public  class PSSOUtils {
         }
         return params;
     }
+
+    /**
+     * Signs a short-lived step-up token echoing the challenge the device sent in
+     * its envelope. The extension verifies this against the realm JWKS, so it is
+     * signed with the realm's active SIG key and carries its kid.
+     */
+    public static String createStepUpToken(KeycloakSession session, RealmModel realm,
+                                     String challenge, String audience) {
+        String alg = realm.getDefaultSignatureAlgorithm();          // RS256 by default
+        KeyWrapper key = session.keys().getActiveKey(realm, KeyUse.SIG, alg);
+
+        SignatureSignerContext signer =
+                session.getProvider(SignatureProvider.class, alg).signer(key);
+
+        int now = Time.currentTime();
+
+        JsonWebToken token = new JsonWebToken();
+        token.id(KeycloakModelUtils.generateId());
+        token.issuer(Urls.realmIssuer(session.getContext().getUri().getBaseUri(), realm.getName()));
+        token.audience(audience);
+        token.iat((long) now);
+        token.exp((long) now + 60);                                  // keep it tight
+        token.setOtherClaims("reauth_challenge", challenge);
+
+        return new JWSBuilder()
+                .type("JWT")
+                .kid(key.getKid())
+                .jsonContent(token)
+                .sign(signer);
+    }
+
 
 
 }

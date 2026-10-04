@@ -10,6 +10,9 @@ ${msg("loginTitle",realm.name)}
 
     <input type="hidden" id="signedtoken" name="signedtoken" value="">
     <input type="hidden" id="reauthenticate" name="reauthenticate" value="">
+    <#-- The signed step-up token, NOT the raw challenge: the extension verifies this
+         against the realm JWKS and only then reads the reauth_challenge claim out of it. -->
+    <input type="hidden" id="stepUpToken" name="stepUpToken" value="${stepUpToken}">
 
 </form>
 
@@ -18,12 +21,12 @@ ${msg("loginTitle",realm.name)}
 
 
     function pssoStepUp() {
-       // const challenge = document.getElementById("challenge").value;
-
-
-        // Send message to native SSO extension
+        const stepUpToken = document.getElementById("stepUpToken").value;
+        // Send message to native SSO extension. The "challenge" key carries the
+        // signed step-up token, not the challenge value itself.
         window.webkit.messageHandlers.pssoStepUp.postMessage({
             type: "getSignedToken",
+            challenge: stepUpToken
         });
     }
 
