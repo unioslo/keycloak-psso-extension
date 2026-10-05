@@ -38,6 +38,31 @@ $ mvn clean install
 Device and user registrations require a valid Access Token from the user. Our companion SSO extension provides that authentication.
 
 
+## Verifying a release
+
+Every release ships the jar together with a SHA-256 checksum and an SSH signature
+over that checksum. The signature is made with the same key that signs the commits
+of this repository, so you can cross-check it against the _Verified_ badge GitHub
+shows on our commits. The public key is in [`allowed_signers`](allowed_signers) and
+is also served, independently of this repository, at
+https://api.github.com/users/oculos/ssh_signing_keys
+
+Download the three release assets plus the key, then:
+
+```
+$ shasum -a 256 -c keycloak-psso.jar.sha256
+keycloak-psso.jar: OK
+
+$ ssh-keygen -Y verify -f allowed_signers -I franciaa@uio.no \
+    -n file -s keycloak-psso.jar.sha256.sig < keycloak-psso.jar.sha256
+Good "file" signature for franciaa@uio.no with RSA key SHA256:rSbAcdqbMIYLHmnh+0xocKuxBpAmTJbwTCd8yeJKk2E
+```
+
+Both commands must succeed. The first proves the jar matches the checksum, the
+second proves the checksum was signed by us. `-n file` is a namespace label, not a
+filename — it has to match exactly or verification fails.
+
+
 ## Companion SSO Extension: Weblogin SSO
 
 We also developed a companion SSO Extension called _Weblogin SSO_, which is a bit limited in certain situations. 
