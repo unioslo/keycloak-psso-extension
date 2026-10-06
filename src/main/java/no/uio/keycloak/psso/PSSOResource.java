@@ -43,6 +43,8 @@ import org.keycloak.component.ComponentModel;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import no.uio.keycloak.psso.badge.PSSOBadgeCredentialData;
 import no.uio.keycloak.psso.badge.PSSOBadgeCredentialModel;
+import no.uio.keycloak.psso.kerberos.KerberosTgtException;
+import no.uio.keycloak.psso.kerberos.KerberosTgtService;
 import no.uio.keycloak.psso.badge.PSSOBadgeCredentialProvider;
 import no.uio.keycloak.psso.badge.PSSOBadgeCredentialProviderFactory;
 import no.uio.keycloak.psso.badge.PSSOBadgePayload;
@@ -679,9 +681,20 @@ public class PSSOResource {
                 if (expiresIn != null) body.put("expires_in", expiresIn);
                 if (refreshExpiresIn != null) body.put("refresh_token_expires_in", refreshExpiresIn);
                 body.put("token_type", "Bearer");
+
+                // Never interferes with issuing the SSO tokens unless the realm is explicitly set
+                // to kerberosFailureMode=fail; otherwise failures are logged and body is untouched.
+                KerberosTgtService.attachIfConfigured(realm, body, user, device, claims);
+
                 payload = new Payload(jsonObjectToMap(body));
                 typeHeaderValue = "platformsso-login-response+jwt";
 
+            } catch (KerberosTgtException e) {
+                // Only reachable with kerberosFailureMode=fail; the default policy logs and continues.
+                logger.error("Platform SSO: " + e.getMessage());
+                return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                        .type("application/platformsso-login-response+jwt")
+                        .build();
             } catch (JSONException e) {
                logger.error("Error Creating the JWE: " + e.getMessage());
                return Response.status(Response.Status.UNAUTHORIZED)
@@ -704,7 +717,7 @@ public class PSSOResource {
                     typeHeaderValue
             );
             JWEObject parsed = JWEObject.parse(jwe);
-            logger.info("Platform SSO: User: "+user.getUsername()+" on device: "+device.getSerialNumber()+" got an SSO token.");
+            logger.info("Platform SSO: User: "+user.getUsername()+" on device: "+device.getSerialNumber()+" got a response of type: "+typeHeaderValue);
             return Response.ok()
                     .type("application/"+typeHeaderValue)
                     .entity(jwe)
