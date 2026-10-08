@@ -627,7 +627,7 @@ public class PSSOResource {
             }
 
         }
-        
+
 
         Map<String, Object> jweCrypto = (Map<String, Object>) claims.get("jwe_crypto");
         String apv = (String) jweCrypto.get("apv");

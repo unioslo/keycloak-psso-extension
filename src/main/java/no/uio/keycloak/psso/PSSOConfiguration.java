@@ -170,6 +170,7 @@ public class PSSOConfiguration implements UiTabProvider, UiTabProviderFactory<Co
                         + "sensitive: it can mint a PKINIT certificate for any principal the certmap rule "
                         + "matches.")
                 .type(ProviderConfigProperty.TEXT_TYPE)
+                .secret(true)
                 .add()
                 .property()
                 .name("kerberosKdcAnchors")
