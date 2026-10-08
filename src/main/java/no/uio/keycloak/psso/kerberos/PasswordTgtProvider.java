@@ -39,8 +39,7 @@ public final class PasswordTgtProvider implements KerberosTgtProvider {
 
         for (KerberosRealmConfig.KdcAddress kdc : config.kdcs()) {
             try {
-                // DEV: at INFO while the Kerberos flow is being brought up; drop to DEBUG before release.
-                logger.infof("Platform SSO: Requesting TGT for %s from %s:%d.",
+                logger.debugf("Platform SSO: Requesting TGT for %s from %s:%d.",
                         request.principal(), kdc.host(), kdc.port());
 
                 TgtTicket tgt = new AsExchange(config)

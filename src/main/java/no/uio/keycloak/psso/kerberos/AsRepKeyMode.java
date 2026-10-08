@@ -12,6 +12,12 @@ package no.uio.keycloak.psso.kerberos;
  * session key itself, so reply key == session key and both readings yield a working credential.
  * That is why it is the default. The ticket inside the AS-REP is never touched and the KDC never
  * sees the re-encrypted message, so this stays protocol-safe.
+ *
+ * Resolved empirically against macOS 27.2 and FreeIPA: Heimdal feeds this key to its
+ * ENCRYPTED_TIMESTAMP pre-auth mech and then decrypts the enc-part with it, so Apple means the
+ * <em>reply key</em> — the Entra "clientKey" naming was the correct hint. Sending the bare ticket
+ * session key without re-encrypting would therefore have failed; the hedge is load-bearing, not
+ * merely defensive.
  */
 public enum AsRepKeyMode {
 

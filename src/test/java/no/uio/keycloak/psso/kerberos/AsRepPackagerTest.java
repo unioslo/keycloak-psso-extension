@@ -68,6 +68,22 @@ class AsRepPackagerTest {
         assertArrayEquals(sessionKey.getKeyData(), recovered.getKey().getKeyData());
     }
 
+    /**
+     * macOS imports via krb5_init_creds_step on a context that never issued an AS-REQ, so
+     * Heimdal checks our nonce against its uninitialised 0. AsExchange has already validated the
+     * real nonce by this point, so clearing it is safe and necessary.
+     */
+    @Test
+    void clearsTheNonceSoHeimdalsZeroedContextAccepts() throws Exception {
+        EncryptionKey sessionKey = EncryptionHandler.random2Key(EncryptionType.AES256_CTS_HMAC_SHA1_96);
+        TgtTicket tgt = syntheticTgt(sessionKey);
+        assertEquals(12345, tgt.getEncKdcRepPart().getNonce(), "fixture starts with a real nonce");
+
+        KerberosTgt packaged = AsRepPackager.pack(tgt, AsRepKeyMode.SESSION_KEY);
+
+        assertEquals(0, decryptEncPart(packaged).getNonce());
+    }
+
     @Test
     void namesMatchApplesExpectedFormat() throws Exception {
         KerberosTgt packaged = AsRepPackager.pack(

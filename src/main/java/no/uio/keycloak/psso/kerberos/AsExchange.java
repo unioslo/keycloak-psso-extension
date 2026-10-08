@@ -108,9 +108,10 @@ public final class AsExchange {
         EncryptionKey clientKey = EncryptionHandler.string2Key(
                 password, saltedEtype.salt(), saltedEtype.s2kParams(), saltedEtype.etype());
 
-        // DEV: at INFO while the Kerberos flow is being brought up; drop to DEBUG before release.
-        logger.infof("Platform SSO: Pre-authenticating %s@%s with etype %s, salt '%s'.",
-                clientPrincipal, realm, saltedEtype.etype(), saltedEtype.salt());
+        // The salt is deliberately not logged: it is an input to the password-derived key, and
+        // keeping it out of logs removes one ingredient from an offline attack.
+        logger.debugf("Platform SSO: Pre-authenticating %s@%s with etype %s.",
+                clientPrincipal, realm, saltedEtype.etype());
 
         nonce = random.nextInt(Integer.MAX_VALUE);
         PaDataEntry timestamp = encryptedTimestamp(clientKey);
@@ -122,7 +123,7 @@ public final class AsExchange {
         return toTgtTicket((AsRep) second, client, clientKey, nonce);
     }
 
-    private TgtTicket toTgtTicket(AsRep asRep, PrincipalName client, EncryptionKey replyKey, int nonce)
+    TgtTicket toTgtTicket(AsRep asRep, PrincipalName client, EncryptionKey replyKey, int nonce)
             throws KrbException {
         byte[] plain = EncryptionHandler.decrypt(
                 asRep.getEncryptedEncPart(), replyKey, KeyUsage.AS_REP_ENCPART);
@@ -179,8 +180,9 @@ public final class AsExchange {
         try {
             methodData = KrbCodec.decode(error.getEdata(), MethodData.class);
         } catch (Exception e) {
-            // DEV: at INFO while the Kerberos flow is being brought up; drop to DEBUG before release.
-            logger.infof("Platform SSO: Undecodable METHOD-DATA: %s", hex(error.getEdata()));
+            if (logger.isDebugEnabled()) {
+                logger.debugf("Platform SSO: Undecodable METHOD-DATA: %s", hex(error.getEdata()));
+            }
             throw new KrbException("Could not decode METHOD-DATA from the KDC's "
                     + "PREAUTH_REQUIRED reply; enable DEBUG on this package for the raw bytes", e);
         }
@@ -195,8 +197,9 @@ public final class AsExchange {
             try {
                 info = KrbCodec.decode(entry.getPaDataValue(), EtypeInfo2.class);
             } catch (Exception e) {
-                // DEV: at INFO while the Kerberos flow is being brought up; drop to DEBUG before release.
-                logger.infof("Platform SSO: Undecodable ETYPE-INFO2: %s", hex(entry.getPaDataValue()));
+                if (logger.isDebugEnabled()) {
+                    logger.debugf("Platform SSO: Undecodable ETYPE-INFO2: %s", hex(entry.getPaDataValue()));
+                }
                 throw new KrbException("Could not decode ETYPE-INFO2 from the KDC", e);
             }
             for (EtypeInfo2Entry candidate : info.getElements()) {
@@ -237,7 +240,7 @@ public final class AsExchange {
         return new PaDataEntry(PaDataType.ENC_TIMESTAMP, KrbCodec.encode(encrypted));
     }
 
-    private AsReq buildAsReq(PrincipalName client, PrincipalName tgs, String realm,
+    AsReq buildAsReq(PrincipalName client, PrincipalName tgs, String realm,
                              int nonce, PaDataEntry preauth) {
         KdcReqBody body = new KdcReqBody();
         body.setKdcOptions(new KdcOptions(KDC_OPTIONS));
@@ -261,7 +264,7 @@ public final class AsExchange {
     }
 
     /** Only advertise what we can actually derive a key for. */
-    private static List<EncryptionType> requestedEtypes() {
+    static List<EncryptionType> requestedEtypes() {
         List<EncryptionType> etypes = new ArrayList<>();
         for (EncryptionType candidate : new EncryptionType[]{
                 EncryptionType.AES256_CTS_HMAC_SHA1_96,
@@ -278,7 +281,7 @@ public final class AsExchange {
     /**
      * Kerberos over TCP: each message is prefixed with its length as a 4-byte big-endian value.
      */
-    private KrbMessage send(AsReq request, KerberosRealmConfig.KdcAddress kdc)
+    KrbMessage send(AsReq request, KerberosRealmConfig.KdcAddress kdc)
             throws KrbException, IOException {
         byte[] encoded = KrbCodec.encode(request);
 
@@ -302,9 +305,10 @@ public final class AsExchange {
             try {
                 return KrbCodec.decodeMessage(ByteBuffer.wrap(response));
             } catch (Exception e) {
-                // DEV: at INFO while the Kerberos flow is being brought up; drop to DEBUG before release.
-                logger.infof("Platform SSO: Undecodable KDC response (%d bytes): %s",
-                        response.length, hex(response));
+                if (logger.isDebugEnabled()) {
+                    logger.debugf("Platform SSO: Undecodable KDC response (%d bytes): %s",
+                            response.length, hex(response));
+                }
                 throw new KrbException("Could not decode the " + response.length
                         + "-byte KDC response; enable DEBUG on this package for the raw bytes", e);
             }

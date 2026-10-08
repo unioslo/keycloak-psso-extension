@@ -18,3 +18,6 @@ buildNumber.properties
 
 # macOS
 .DS_Store
+
+# Project context for AI sessions (not source)
+plans/

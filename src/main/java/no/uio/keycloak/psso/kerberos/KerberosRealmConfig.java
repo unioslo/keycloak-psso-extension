@@ -23,6 +23,7 @@ public final class KerberosRealmConfig {
     private static final String DEFAULT_TICKET_KEY_PATH = "login_tgt";
     private static final int DEFAULT_TIMEOUT_MS = 5000;
     private static final int DEFAULT_KDC_PORT = 88;
+    private static final int DEFAULT_CERT_LIFETIME_SECONDS = 60;
 
     public record KdcAddress(String host, int port) { }
 
@@ -30,20 +31,32 @@ public final class KerberosRealmConfig {
     private final List<KdcAddress> kdcs;
     private final String ticketKeyPath;
     private final String principalAttribute;
+    private final String triggerClaim;
     private final AsRepKeyMode asRepKeyMode;
     private final boolean failHard;
     private final int timeoutMs;
+    private final String localCaCertPem;
+    private final String localCaKeyPem;
+    private final String kdcAnchorsPem;
+    private final int certLifetimeSeconds;
 
     private KerberosRealmConfig(String realm, List<KdcAddress> kdcs, String ticketKeyPath,
-                                String principalAttribute,
-                                AsRepKeyMode asRepKeyMode, boolean failHard, int timeoutMs) {
+                                String principalAttribute, String triggerClaim,
+                                AsRepKeyMode asRepKeyMode, boolean failHard, int timeoutMs,
+                                String localCaCertPem, String localCaKeyPem,
+                                String kdcAnchorsPem, int certLifetimeSeconds) {
         this.realm = realm;
         this.kdcs = kdcs;
         this.ticketKeyPath = ticketKeyPath;
         this.principalAttribute = principalAttribute;
+        this.triggerClaim = triggerClaim;
         this.asRepKeyMode = asRepKeyMode;
         this.failHard = failHard;
         this.timeoutMs = timeoutMs;
+        this.localCaCertPem = localCaCertPem;
+        this.localCaKeyPem = localCaKeyPem;
+        this.kdcAnchorsPem = kdcAnchorsPem;
+        this.certLifetimeSeconds = certLifetimeSeconds;
     }
 
     public String realm() {
@@ -62,6 +75,11 @@ public final class KerberosRealmConfig {
         return principalAttribute;
     }
 
+    /** Empty means always attempt; otherwise the claim or scope value the Mac must send. */
+    public String triggerClaim() {
+        return triggerClaim;
+    }
+
     public AsRepKeyMode asRepKeyMode() {
         return asRepKeyMode;
     }
@@ -72,6 +90,27 @@ public final class KerberosRealmConfig {
 
     public int timeoutMs() {
         return timeoutMs;
+    }
+
+    public String localCaCertPem() {
+        return localCaCertPem;
+    }
+
+    public String localCaKeyPem() {
+        return localCaKeyPem;
+    }
+
+    public String kdcAnchorsPem() {
+        return kdcAnchorsPem;
+    }
+
+    public int certLifetimeSeconds() {
+        return certLifetimeSeconds;
+    }
+
+    /** PKINIT needs a certificate issuer and a way to verify the KDC's signed reply. */
+    public boolean pkinitConfigured() {
+        return !localCaCertPem.isEmpty() && !localCaKeyPem.isEmpty() && !kdcAnchorsPem.isEmpty();
     }
 
 
@@ -104,17 +143,29 @@ public final class KerberosRealmConfig {
                 .orElse(DEFAULT_TICKET_KEY_PATH);
         String principalAttribute = Optional.ofNullable(trimToNull(model.get("kerberosPrincipalAttribute")))
                 .orElse("");
+        String triggerClaim = Optional.ofNullable(trimToNull(model.get("kerberosTriggerClaim")))
+                .orElse("");
         boolean failHard = "fail".equalsIgnoreCase(trimToNull(model.get("kerberosFailureMode")));
         int timeoutMs = parsePositiveInt(model.get("kerberosTimeoutMs"), DEFAULT_TIMEOUT_MS);
+        String localCaCertPem = Optional.ofNullable(trimToNull(model.get("kerberosLocalCaCert"))).orElse("");
+        String localCaKeyPem = Optional.ofNullable(trimToNull(model.get("kerberosLocalCaKey"))).orElse("");
+        String kdcAnchorsPem = Optional.ofNullable(trimToNull(model.get("kerberosKdcAnchors"))).orElse("");
+        int certLifetimeSeconds = parsePositiveInt(model.get("kerberosCertLifetimeSeconds"),
+                DEFAULT_CERT_LIFETIME_SECONDS);
 
         return Optional.of(new KerberosRealmConfig(
                 kerberosRealm,
                 kdcs,
                 ticketKeyPath,
                 principalAttribute,
+                triggerClaim,
                 AsRepKeyMode.fromConfig(model.get("kerberosAsRepKeyMode")),
                 failHard,
-                timeoutMs));
+                timeoutMs,
+                localCaCertPem,
+                localCaKeyPem,
+                kdcAnchorsPem,
+                certLifetimeSeconds));
     }
 
     /**

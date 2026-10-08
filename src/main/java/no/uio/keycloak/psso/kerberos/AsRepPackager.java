@@ -34,8 +34,18 @@ public final class AsRepPackager {
             case RANDOM_REPLY_KEY -> EncryptionHandler.random2Key(sessionKey.getKeyType());
         };
 
-        // Re-encode the enc-part exactly as received. It is an EncAsRepPart instance, so this
-        // keeps application tag 25 rather than the TGS-REP tag.
+        // Clear the nonce before handing the ticket to macOS.
+        //
+        // The nonce exists to bind an AS-REP to the AS-REQ that asked for it, and AsExchange has
+        // already verified it against the request we sent. macOS then imports the ticket through
+        // krb5_init_creds_step on a context that never generated an AS-REQ, so Heimdal compares
+        // our nonce against its own uninitialised 0 and rejects a mismatch with
+        // KRB5KRB_AP_ERR_MODIFIED. Apple cannot know the value we used with the KDC, so keeping
+        // it can never help — observed as an import failure against FreeIPA.
+        encPart.setNonce(0);
+
+        // Re-encode the enc-part. It is an EncAsRepPart instance, so this keeps application
+        // tag 25 rather than the TGS-REP tag.
         byte[] plainEncPart = KrbCodec.encode(encPart);
         EncryptedData encrypted = EncryptionHandler.encrypt(plainEncPart, replyKey, KeyUsage.AS_REP_ENCPART);
 
@@ -65,8 +75,7 @@ public final class AsRepPackager {
                 asRepDer,
                 encPart.getEndTime() == null ? 0L : encPart.getEndTime().getTime());
 
-        // DEV: at INFO while the Kerberos flow is being brought up; drop to DEBUG before release.
-        logger.infof("Platform SSO: Packaged TGT for %s (%s), etype %d, %d byte AS-REP.",
+        logger.debugf("Platform SSO: Packaged TGT for %s (%s), etype %d, %d byte AS-REP.",
                 packaged.clientName(), packaged.serviceName(),
                 packaged.encryptionKeyType(), asRepDer.length);
 

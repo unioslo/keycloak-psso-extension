@@ -627,10 +627,7 @@ public class PSSOResource {
             }
 
         }
-
-        for (String claim : claims.keySet()) {
-            logger.debug("Request claim: "+ claim +": " + claims.get(claim));
-        }
+        
 
         Map<String, Object> jweCrypto = (Map<String, Object>) claims.get("jwe_crypto");
         String apv = (String) jweCrypto.get("apv");

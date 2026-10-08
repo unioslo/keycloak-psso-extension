@@ -133,12 +133,59 @@ public class PSSOConfiguration implements UiTabProvider, UiTabProviderFactory<Co
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
+                .name("kerberosTriggerClaim")
+                .label("Require claim or scope to issue a TGT")
+                .helpText("Leave empty to attempt a TGT on every password login. If set (e.g. "
+                        + "fetch_kerberos_tgt), a ticket is only fetched when the Mac's SSO extension "
+                        + "sends that name either as a custom login-request claim or as an extra scope. "
+                        + "Lets MDM enable Kerberos per machine, and spares off-domain Macs the KDC "
+                        + "connect timeout on every login.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .add()
+                .property()
                 .name("kerberosTicketKeyPath")
                 .label("Ticket key path")
                 .helpText("Key in the login response holding the ticket. Must match ticketKeyPath in the "
                         + "SSO extension's Kerberos mapping.")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .defaultValue("login_tgt")
+                .add()
+                .property()
+                .name("kerberosLocalCaCert")
+                .label("PKINIT CA certificate")
+                .helpText("PEM certificate of the CA that mints per-login PKINIT client certificates. "
+                        + "Enables Kerberos for passwordless logins (Secure Enclave). On FreeIPA, install "
+                        + "this CA as a KDC trust anchor (ipa-cacert-manage install + ipa-certupdate) and "
+                        + "scope it with a certmap rule. Never add this CA to Active Directory's NTAuth "
+                        + "store - the AD path uses an enrollment agent instead.")
+                .type(ProviderConfigProperty.TEXT_TYPE)
+                .add()
+                .property()
+                .name("kerberosLocalCaKey")
+                .label("PKINIT CA private key")
+                .helpText("PEM private key (PKCS#8 or legacy RSA/EC form, unencrypted) for the PKINIT CA. "
+                        + "Paste the full PEM including the BEGIN/END lines. For production, put the key in "
+                        + "the Keycloak vault and reference it here as ${vault.kerberos-pkinit-ca-key} "
+                        + "instead - a vault reference works in this field too. Treat this as highly "
+                        + "sensitive: it can mint a PKINIT certificate for any principal the certmap rule "
+                        + "matches.")
+                .type(ProviderConfigProperty.TEXT_TYPE)
+                .add()
+                .property()
+                .name("kerberosKdcAnchors")
+                .label("KDC trust anchors")
+                .helpText("PEM bundle of the CA(s) that issued the KDC's own PKINIT certificate, used to "
+                        + "verify the KDC's signed Diffie-Hellman reply. On FreeIPA this is the IPA CA; "
+                        + "on Active Directory, the CA that issued the domain controller certificates.")
+                .type(ProviderConfigProperty.TEXT_TYPE)
+                .add()
+                .property()
+                .name("kerberosCertLifetimeSeconds")
+                .label("PKINIT certificate lifetime (seconds)")
+                .helpText("Validity of each per-login client certificate beyond clock-skew backdating. "
+                        + "It only needs to outlive one AS exchange.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .defaultValue("60")
                 .add()
                 .property()
                 .name("kerberosAsRepKeyMode")
