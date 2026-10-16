@@ -91,3 +91,19 @@ Please subscribe to our mailing list for discussions and announcements: https://
 ## Acknowledgement
 
 Thanks to Timothy Perfitt from [Twocanoes](https://twocanoes.com) for the inspiration provided with their tutorials and code regarding SSO Extensions. His [psso-server-go](https://github.com/twocanoes/psso-server-go) was particularly useful to understand a few concepts regarding user and device registration.
+
+## License
+
+Copyright 2025–2026 University of Oslo, Norway.
+
+Licensed under the **GNU General Public License, version 2 or later** (`GPL-2.0-or-later`).
+See [LICENSE](LICENSE) for the full text. The companion
+[psso-ad-kerberos](https://github.com/unioslo/psso-ad-kerberos) enrollment agent is under the
+same terms.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+The released jar bundles third-party dependencies under their own licenses — notably Apache
+Kerby (Apache-2.0) and Bouncy Castle (MIT) — whose notices are merged into the artifact by the
+shade plugin.

@@ -8,6 +8,15 @@
     <version>26.5.2</version>
     <name>Platform SSO for Keycloak</name>
 
+    <licenses>
+        <license>
+            <name>GNU General Public License, version 2 or later</name>
+            <url>https://www.gnu.org/licenses/old-licenses/gpl-2.0.html</url>
+            <distribution>repo</distribution>
+            <comments>SPDX-License-Identifier: GPL-2.0-or-later</comments>
+        </license>
+    </licenses>
+
     <properties>
         <version.keycloak>${project.version}</version.keycloak>
         <version.keycloak.client>${project.version}</version.keycloak.client>

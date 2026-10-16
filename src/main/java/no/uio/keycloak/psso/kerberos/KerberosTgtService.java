@@ -1,3 +1,20 @@
+/* Copyright 2026 University of Oslo, Norway
+ # This file is part of the Keycloak Platform SSO Extension codebase.
+ #
+ # This extension for Keycloak is free software; you can redistribute
+ # it and/or modify it under the terms of the GNU General Public License
+ # as published by the Free Software Foundation;
+ # either version 2 of the License, or (at your option) any later version.
+ #
+ # This extension is distributed in the hope that it will be useful, but
+ # WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ # General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this extension; if not, write to the Free Software Foundation,
+ # Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
+*/
 package no.uio.keycloak.psso.kerberos;
 
 import no.uio.keycloak.psso.Device;
@@ -78,8 +95,11 @@ public final class KerberosTgtService {
             KerberosTgt tgt = provider.obtain(new KerberosTgtRequest(principal, password(claims), user));
             body.put(config.ticketKeyPath(), tgt.toAppleDictionary());
 
-            logger.infof("Platform SSO: User %s on device %s received a Kerberos TGT for %s via %s.",
-                    user.getUsername(), device.getSerialNumber(), tgt.realm(), provider.name());
+            // Deliberately "added to the login response", not "received": whether macOS imports
+            // the ticket is invisible from here. Check app-sso platform -s on the Mac for that.
+            logger.infof("Platform SSO: Added a Kerberos TGT for %s to the login response for user %s "
+                    + "on device %s (via %s); import by the client is not confirmed here.",
+                    tgt.realm(), user.getUsername(), device.getSerialNumber(), provider.name());
 
         } catch (Exception e) {
             if (config.failHard()) {
@@ -106,11 +126,16 @@ public final class KerberosTgtService {
         // Secure Enclave, refresh and token-exchange grants carry no password; the Keycloak
         // session is the proof of identity and PKINIT turns it into something a KDC accepts.
         if (config.pkinitConfigured()) {
-            return new PkinitTgtProvider(config, new LocalCaIssuer(
-                    config.localCaCertPem(), config.localCaKeyPem(), config.certLifetimeSeconds()));
+            CertificateSource source = switch (config.certSource()) {
+                case LOCAL_CA -> new LocalCaIssuer(
+                        config.localCaCertPem(), config.localCaKeyPem(), config.certLifetimeSeconds());
+                case AGENT_SERVICE -> new AgentServiceClient(config);
+            };
+            return new PkinitTgtProvider(config, source);
         }
         logger.debugf("Platform SSO: No password in this request (device %s registered via %s) and "
-                + "PKINIT is not configured (CA cert, CA key and KDC anchors required); no TGT issued.",
+                + "PKINIT is not configured (needs KDC anchors plus a certificate source — a local CA "
+                + "or an enrollment-agent service); no TGT issued.",
                 device.getSerialNumber(), device.getRegistrationMethod());
         return null;
     }

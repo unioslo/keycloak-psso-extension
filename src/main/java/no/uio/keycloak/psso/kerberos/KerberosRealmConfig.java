@@ -1,3 +1,20 @@
+/* Copyright 2026 University of Oslo, Norway
+ # This file is part of the Keycloak Platform SSO Extension codebase.
+ #
+ # This extension for Keycloak is free software; you can redistribute
+ # it and/or modify it under the terms of the GNU General Public License
+ # as published by the Free Software Foundation;
+ # either version 2 of the License, or (at your option) any later version.
+ #
+ # This extension is distributed in the hope that it will be useful, but
+ # WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ # General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this extension; if not, write to the Free Software Foundation,
+ # Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
+*/
 package no.uio.keycloak.psso.kerberos;
 
 import org.jboss.logging.Logger;
@@ -35,28 +52,85 @@ public final class KerberosRealmConfig {
     private final AsRepKeyMode asRepKeyMode;
     private final boolean failHard;
     private final int timeoutMs;
+    private final String kdcAnchorsPem;
+    private final String kdcCertName;
+    private final int certLifetimeSeconds;
+    private final CertSource certSource;
+    // LOCAL_CA path (FreeIPA):
     private final String localCaCertPem;
     private final String localCaKeyPem;
-    private final String kdcAnchorsPem;
-    private final int certLifetimeSeconds;
+    // AGENT_SERVICE path (Active Directory):
+    private final String agentServiceUrl;
+    private final String agentClientCertPem;
+    private final String agentClientKeyPem;
+    private final String agentServerCaPem;
 
-    private KerberosRealmConfig(String realm, List<KdcAddress> kdcs, String ticketKeyPath,
-                                String principalAttribute, String triggerClaim,
-                                AsRepKeyMode asRepKeyMode, boolean failHard, int timeoutMs,
-                                String localCaCertPem, String localCaKeyPem,
-                                String kdcAnchorsPem, int certLifetimeSeconds) {
-        this.realm = realm;
-        this.kdcs = kdcs;
-        this.ticketKeyPath = ticketKeyPath;
-        this.principalAttribute = principalAttribute;
-        this.triggerClaim = triggerClaim;
-        this.asRepKeyMode = asRepKeyMode;
-        this.failHard = failHard;
-        this.timeoutMs = timeoutMs;
-        this.localCaCertPem = localCaCertPem;
-        this.localCaKeyPem = localCaKeyPem;
-        this.kdcAnchorsPem = kdcAnchorsPem;
-        this.certLifetimeSeconds = certLifetimeSeconds;
+    private KerberosRealmConfig(Builder b) {
+        this.realm = b.realm;
+        this.kdcs = b.kdcs;
+        this.ticketKeyPath = b.ticketKeyPath;
+        this.principalAttribute = b.principalAttribute;
+        this.triggerClaim = b.triggerClaim;
+        this.asRepKeyMode = b.asRepKeyMode;
+        this.failHard = b.failHard;
+        this.timeoutMs = b.timeoutMs;
+        this.kdcAnchorsPem = b.kdcAnchorsPem;
+        this.kdcCertName = b.kdcCertName;
+        this.certLifetimeSeconds = b.certLifetimeSeconds;
+        this.certSource = b.certSource;
+        this.localCaCertPem = b.localCaCertPem;
+        this.localCaKeyPem = b.localCaKeyPem;
+        this.agentServiceUrl = b.agentServiceUrl;
+        this.agentClientCertPem = b.agentClientCertPem;
+        this.agentClientKeyPem = b.agentClientKeyPem;
+        this.agentServerCaPem = b.agentServerCaPem;
+    }
+
+    /**
+     * Fluent builder. Everything has a sane default, so tests set only what they care about and
+     * new fields do not break existing call sites — the reason this exists instead of a widening
+     * constructor.
+     */
+    static final class Builder {
+        private String realm = "";
+        private List<KdcAddress> kdcs = List.of();
+        private String ticketKeyPath = DEFAULT_TICKET_KEY_PATH;
+        private String principalAttribute = "";
+        private String triggerClaim = "";
+        private AsRepKeyMode asRepKeyMode = AsRepKeyMode.SESSION_KEY;
+        private boolean failHard = false;
+        private int timeoutMs = DEFAULT_TIMEOUT_MS;
+        private String kdcAnchorsPem = "";
+        private String kdcCertName = "";
+        private int certLifetimeSeconds = DEFAULT_CERT_LIFETIME_SECONDS;
+        private CertSource certSource = CertSource.LOCAL_CA;
+        private String localCaCertPem = "";
+        private String localCaKeyPem = "";
+        private String agentServiceUrl = "";
+        private String agentClientCertPem = "";
+        private String agentClientKeyPem = "";
+        private String agentServerCaPem = "";
+
+        Builder realm(String v) { this.realm = v; return this; }
+        Builder kdcs(List<KdcAddress> v) { this.kdcs = v; return this; }
+        Builder ticketKeyPath(String v) { this.ticketKeyPath = v; return this; }
+        Builder principalAttribute(String v) { this.principalAttribute = v; return this; }
+        Builder triggerClaim(String v) { this.triggerClaim = v; return this; }
+        Builder asRepKeyMode(AsRepKeyMode v) { this.asRepKeyMode = v; return this; }
+        Builder failHard(boolean v) { this.failHard = v; return this; }
+        Builder timeoutMs(int v) { this.timeoutMs = v; return this; }
+        Builder kdcAnchorsPem(String v) { this.kdcAnchorsPem = v; return this; }
+        Builder kdcCertName(String v) { this.kdcCertName = v; return this; }
+        Builder certLifetimeSeconds(int v) { this.certLifetimeSeconds = v; return this; }
+        Builder certSource(CertSource v) { this.certSource = v; return this; }
+        Builder localCaCertPem(String v) { this.localCaCertPem = v; return this; }
+        Builder localCaKeyPem(String v) { this.localCaKeyPem = v; return this; }
+        Builder agentServiceUrl(String v) { this.agentServiceUrl = v; return this; }
+        Builder agentClientCertPem(String v) { this.agentClientCertPem = v; return this; }
+        Builder agentClientKeyPem(String v) { this.agentClientKeyPem = v; return this; }
+        Builder agentServerCaPem(String v) { this.agentServerCaPem = v; return this; }
+
+        KerberosRealmConfig build() { return new KerberosRealmConfig(this); }
     }
 
     public String realm() {
@@ -92,6 +166,28 @@ public final class KerberosRealmConfig {
         return timeoutMs;
     }
 
+    public String kdcAnchorsPem() {
+        return kdcAnchorsPem;
+    }
+
+    /**
+     * Hostname to expect in the KDC certificate, when it differs from the address we connect to.
+     * Needed when {@code kerberosKdcHosts} holds IP addresses — an Active Directory KDC
+     * certificate carries dNSName entries and no id-pkinit-san, so there is nothing for an IP to
+     * match. Empty means verify against the connection address itself.
+     */
+    public String kdcCertName() {
+        return kdcCertName;
+    }
+
+    public int certLifetimeSeconds() {
+        return certLifetimeSeconds;
+    }
+
+    public CertSource certSource() {
+        return certSource;
+    }
+
     public String localCaCertPem() {
         return localCaCertPem;
     }
@@ -100,17 +196,35 @@ public final class KerberosRealmConfig {
         return localCaKeyPem;
     }
 
-    public String kdcAnchorsPem() {
-        return kdcAnchorsPem;
+    public String agentServiceUrl() {
+        return agentServiceUrl;
     }
 
-    public int certLifetimeSeconds() {
-        return certLifetimeSeconds;
+    public String agentClientCertPem() {
+        return agentClientCertPem;
     }
 
-    /** PKINIT needs a certificate issuer and a way to verify the KDC's signed reply. */
+    public String agentClientKeyPem() {
+        return agentClientKeyPem;
+    }
+
+    public String agentServerCaPem() {
+        return agentServerCaPem;
+    }
+
+    /**
+     * Whether PKINIT can run: a way to verify the KDC's signed reply, plus a usable certificate
+     * source for the configured kind. The passwordless flow is skipped when this is false.
+     */
     public boolean pkinitConfigured() {
-        return !localCaCertPem.isEmpty() && !localCaKeyPem.isEmpty() && !kdcAnchorsPem.isEmpty();
+        if (kdcAnchorsPem.isEmpty()) {
+            return false;
+        }
+        return switch (certSource) {
+            case LOCAL_CA -> !localCaCertPem.isEmpty() && !localCaKeyPem.isEmpty();
+            case AGENT_SERVICE -> !agentServiceUrl.isEmpty()
+                    && !agentClientCertPem.isEmpty() && !agentClientKeyPem.isEmpty();
+        };
     }
 
 
@@ -153,19 +267,26 @@ public final class KerberosRealmConfig {
         int certLifetimeSeconds = parsePositiveInt(model.get("kerberosCertLifetimeSeconds"),
                 DEFAULT_CERT_LIFETIME_SECONDS);
 
-        return Optional.of(new KerberosRealmConfig(
-                kerberosRealm,
-                kdcs,
-                ticketKeyPath,
-                principalAttribute,
-                triggerClaim,
-                AsRepKeyMode.fromConfig(model.get("kerberosAsRepKeyMode")),
-                failHard,
-                timeoutMs,
-                localCaCertPem,
-                localCaKeyPem,
-                kdcAnchorsPem,
-                certLifetimeSeconds));
+        return Optional.of(new Builder()
+                .realm(kerberosRealm)
+                .kdcs(kdcs)
+                .ticketKeyPath(ticketKeyPath)
+                .principalAttribute(principalAttribute)
+                .triggerClaim(triggerClaim)
+                .asRepKeyMode(AsRepKeyMode.fromConfig(model.get("kerberosAsRepKeyMode")))
+                .failHard(failHard)
+                .timeoutMs(timeoutMs)
+                .kdcAnchorsPem(kdcAnchorsPem)
+                .kdcCertName(Optional.ofNullable(trimToNull(model.get("kerberosKdcCertName"))).orElse(""))
+                .certLifetimeSeconds(certLifetimeSeconds)
+                .certSource(CertSource.fromConfig(model.get("kerberosCertSource")))
+                .localCaCertPem(localCaCertPem)
+                .localCaKeyPem(localCaKeyPem)
+                .agentServiceUrl(Optional.ofNullable(trimToNull(model.get("kerberosAgentServiceUrl"))).orElse(""))
+                .agentClientCertPem(Optional.ofNullable(trimToNull(model.get("kerberosAgentClientCert"))).orElse(""))
+                .agentClientKeyPem(Optional.ofNullable(trimToNull(model.get("kerberosAgentClientKey"))).orElse(""))
+                .agentServerCaPem(Optional.ofNullable(trimToNull(model.get("kerberosAgentServerCa"))).orElse(""))
+                .build());
     }
 
     /**

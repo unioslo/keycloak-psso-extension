@@ -1,3 +1,20 @@
+/* Copyright 2026 University of Oslo, Norway
+ # This file is part of the Keycloak Platform SSO Extension codebase.
+ #
+ # This extension for Keycloak is free software; you can redistribute
+ # it and/or modify it under the terms of the GNU General Public License
+ # as published by the Free Software Foundation;
+ # either version 2 of the License, or (at your option) any later version.
+ #
+ # This extension is distributed in the hope that it will be useful, but
+ # WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ # General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this extension; if not, write to the Free Software Foundation,
+ # Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
+*/
 package no.uio.keycloak.psso.kerberos;
 
 import org.apache.kerby.asn1.type.Asn1Integer;
@@ -101,6 +118,23 @@ class PkinitExchangeTest {
                 new JcaX509CertificateHolder(dnsOnly), REALM, "other.host"));
     }
 
+    /**
+     * Connecting by IP: an AD KDC certificate has only dNSName entries, so nothing can match the
+     * address. kerberosKdcCertName supplies the name to verify against instead.
+     */
+    @Test
+    void kdcIdentityUsesTheConfiguredNameWhenConnectingByIp() throws Exception {
+        X509Certificate dnsOnly = ipaCa.issue("CN=dc01", kdcKeys.getPublic(),
+                new GeneralName(GeneralName.dNSName, "dc01.ad.example.com"));
+
+        // The IP itself must not satisfy the check...
+        assertThrows(KrbException.class, () -> PkinitExchange.verifyKdcIdentity(
+                new JcaX509CertificateHolder(dnsOnly), REALM, "10.0.0.5"));
+        // ...but the configured expected name must.
+        assertDoesNotThrow(() -> PkinitExchange.verifyKdcIdentity(
+                new JcaX509CertificateHolder(dnsOnly), REALM, "dc01.ad.example.com"));
+    }
+
     @Test
     void kdcIdentityRejectsACertificateForTheWrongRealm() throws Exception {
         X509Certificate otherRealm = ipaCa.issue("CN=kdc", kdcKeys.getPublic(),
@@ -129,15 +163,12 @@ class PkinitExchangeTest {
                 .getEncoded();
     }
 
-    private static PkinitExchange exchange(String anchorsPem) throws Exception {
-        var ctor = KerberosRealmConfig.class.getDeclaredConstructors()[0];
-        ctor.setAccessible(true);
-        KerberosRealmConfig config = (KerberosRealmConfig) ctor.newInstance(
-                REALM,
-                java.util.List.of(new KerberosRealmConfig.KdcAddress(KDC_HOST, 88)),
-                "login_tgt", "", "",
-                AsRepKeyMode.SESSION_KEY, false, 5000,
-                "", "", anchorsPem, 60);
+    private static PkinitExchange exchange(String anchorsPem) {
+        KerberosRealmConfig config = new KerberosRealmConfig.Builder()
+                .realm(REALM)
+                .kdcs(java.util.List.of(new KerberosRealmConfig.KdcAddress(KDC_HOST, 88)))
+                .kdcAnchorsPem(anchorsPem)
+                .build();
         return new PkinitExchange(config);
     }
 }

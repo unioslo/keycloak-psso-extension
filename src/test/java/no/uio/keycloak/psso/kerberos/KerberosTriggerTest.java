@@ -1,3 +1,20 @@
+/* Copyright 2026 University of Oslo, Norway
+ # This file is part of the Keycloak Platform SSO Extension codebase.
+ #
+ # This extension for Keycloak is free software; you can redistribute
+ # it and/or modify it under the terms of the GNU General Public License
+ # as published by the Free Software Foundation;
+ # either version 2 of the License, or (at your option) any later version.
+ #
+ # This extension is distributed in the hope that it will be useful, but
+ # WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ # General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this extension; if not, write to the Free Software Foundation,
+ # Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
+*/
 package no.uio.keycloak.psso.kerberos;
 
 import org.junit.jupiter.api.Test;
@@ -59,22 +76,12 @@ class KerberosTriggerTest {
         return (boolean) requested.invoke(service, new HashMap<>(claims));
     }
 
-    private static KerberosRealmConfig config(String trigger) throws Exception {
-        var ctor = KerberosRealmConfig.class.getDeclaredConstructors()[0];
-        ctor.setAccessible(true);
-        return (KerberosRealmConfig) ctor.newInstance(
-                "EXAMPLE.COM",
-                java.util.List.of(new KerberosRealmConfig.KdcAddress("kdc", 88)),
-                "login_tgt",
-                "",
-                trigger,
-                AsRepKeyMode.SESSION_KEY,
-                false,
-                5000,
-                "",   // localCaCertPem
-                "",   // localCaKeyPem
-                "",   // kdcAnchorsPem
-                60);
+    private static KerberosRealmConfig config(String trigger) {
+        return new KerberosRealmConfig.Builder()
+                .realm("EXAMPLE.COM")
+                .kdcs(java.util.List.of(new KerberosRealmConfig.KdcAddress("kdc", 88)))
+                .triggerClaim(trigger)
+                .build();
     }
 
     private static Object serviceWith(KerberosRealmConfig config) throws Exception {

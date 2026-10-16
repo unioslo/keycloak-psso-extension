@@ -1,3 +1,20 @@
+/* Copyright 2026 University of Oslo, Norway
+ # This file is part of the Keycloak Platform SSO Extension codebase.
+ #
+ # This extension for Keycloak is free software; you can redistribute
+ # it and/or modify it under the terms of the GNU General Public License
+ # as published by the Free Software Foundation;
+ # either version 2 of the License, or (at your option) any later version.
+ #
+ # This extension is distributed in the hope that it will be useful, but
+ # WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ # General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this extension; if not, write to the Free Software Foundation,
+ # Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
+*/
 package no.uio.keycloak.psso.kerberos;
 
 import org.apache.kerby.asn1.type.Asn1Integer;
@@ -124,7 +141,7 @@ public final class PkinitExchange {
             // a PA-FX-COOKIE it wants echoed back. One rebuild (fresh nonce, time, checksum, DH
             // key) with the cookie attached; a second error is a real failure.
             if (error.getErrorCode() != KrbErrorCode.KDC_ERR_PREAUTH_REQUIRED) {
-                throw new KrbException(error.getErrorCode(), error.getEtext());
+                throw new KrbException(error.getErrorCode(), describe(error));
             }
             PaDataEntry cookie = extractCookie(error);
             logger.debugf("Platform SSO: KDC asked for another PKINIT round trip (cookie %s).",
@@ -132,7 +149,7 @@ public final class PkinitExchange {
             attempt = buildAttempt(clientName, identity, cookie);
             reply = asExchange.send(attempt.asReq(), kdc);
             if (reply instanceof KrbError secondError) {
-                throw new KrbException(secondError.getErrorCode(), secondError.getEtext());
+                throw new KrbException(secondError.getErrorCode(), describe(secondError));
             }
         }
 
@@ -330,7 +347,11 @@ public final class PkinitExchange {
             }
             validateChain(signerCert, cmsCerts, parseAnchors(config.kdcAnchorsPem()));
 
-            verifyKdcIdentity(signerHolder, config.realm(), kdc.host());
+            // When connecting by IP there is no name for a dNSName to match, so allow an
+            // explicitly configured expected name. This pins identity out-of-band rather than
+            // weakening the check.
+            String expectedName = config.kdcCertName().isEmpty() ? kdc.host() : config.kdcCertName();
+            verifyKdcIdentity(signerHolder, config.realm(), expectedName);
 
             return (byte[]) cms.getSignedContent().getContent();
         } catch (KrbException e) {
@@ -401,7 +422,33 @@ public final class PkinitExchange {
             }
         }
         throw new KrbException("KDC certificate names " + seen + ", none of which match "
-                + "krbtgt/" + realm + " or host " + kdcHost);
+                + "krbtgt/" + realm + " or host " + kdcHost
+                + ". If kerberosKdcHosts holds an IP address, set kerberosKdcCertName to the "
+                + "hostname the certificate actually carries.");
+    }
+
+    /**
+     * Describes a KRB-ERROR, including the KDC's own clock. KRB_AP_ERR_SKEW is reported by the
+     * KDC whenever it dislikes our PKAuthenticator timestamp, so the actual delta it perceives is
+     * the one fact worth having — guessing at clock drift otherwise wastes a lot of time.
+     */
+    private static String describe(KrbError error) {
+        StringBuilder sb = new StringBuilder(String.valueOf(error.getErrorCode()));
+        if (error.getEtext() != null && !error.getEtext().isEmpty()) {
+            sb.append(" (").append(error.getEtext()).append(')');
+        }
+        try {
+            if (error.getStime() != null) {
+                long kdcMillis = error.getStime().getTime();
+                long ourMillis = System.currentTimeMillis();
+                sb.append(String.format("; KDC clock %tFT%<tTZ, ours %tFT%<tTZ, delta %+d s",
+                        new java.util.Date(kdcMillis), new java.util.Date(ourMillis),
+                        (kdcMillis - ourMillis) / 1000L));
+            }
+        } catch (Exception ignored) {
+            // diagnostics only
+        }
+        return sb.toString();
     }
 
     private static PaDataEntry extractCookie(KrbError error) {

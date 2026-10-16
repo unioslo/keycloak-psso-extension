@@ -1,3 +1,20 @@
+/* Copyright 2026 University of Oslo, Norway
+ # This file is part of the Keycloak Platform SSO Extension codebase.
+ #
+ # This extension for Keycloak is free software; you can redistribute
+ # it and/or modify it under the terms of the GNU General Public License
+ # as published by the Free Software Foundation;
+ # either version 2 of the License, or (at your option) any later version.
+ #
+ # This extension is distributed in the hope that it will be useful, but
+ # WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ # General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this extension; if not, write to the Free Software Foundation,
+ # Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
+*/
 package no.uio.keycloak.psso;
 
 import org.keycloak.Config;
@@ -181,12 +198,64 @@ public class PSSOConfiguration implements UiTabProvider, UiTabProviderFactory<Co
                 .type(ProviderConfigProperty.TEXT_TYPE)
                 .add()
                 .property()
+                .name("kerberosKdcCertName")
+                .label("Expected KDC certificate hostname")
+                .helpText("Leave empty to verify the KDC's certificate against the address in KDC hosts. "
+                        + "Set this when KDC hosts holds IP addresses: an Active Directory KDC certificate "
+                        + "carries dNSName entries and no pkinit SAN, so an IP can never match. FreeIPA "
+                        + "KDC certificates usually carry a pkinit SAN, which matches on the realm and "
+                        + "needs no hostname.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .add()
+                .property()
                 .name("kerberosCertLifetimeSeconds")
                 .label("PKINIT certificate lifetime (seconds)")
                 .helpText("Validity of each per-login client certificate beyond clock-skew backdating. "
-                        + "It only needs to outlive one AS exchange.")
+                        + "It only needs to outlive one AS exchange. (Local CA source only; with an "
+                        + "enrollment agent the issuing CA's template decides the lifetime.)")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .defaultValue("60")
+                .add()
+                .property()
+                .name("kerberosCertSource")
+                .label("PKINIT certificate source")
+                .helpText("Where passwordless-login certificates come from. \"local-ca\" (FreeIPA): "
+                        + "Keycloak mints them from the CA above. \"agent-service\" (Active Directory): "
+                        + "Keycloak sends a CSR to an enrollment-agent service that has AD CS issue them. "
+                        + "The local-ca fields apply to the former, the agent fields below to the latter.")
+                .type(ProviderConfigProperty.LIST_TYPE)
+                .options("local-ca", "agent-service")
+                .defaultValue("local-ca")
+                .add()
+                .property()
+                .name("kerberosAgentServiceUrl")
+                .label("Enrollment agent service URL")
+                .helpText("HTTPS endpoint of the Windows enrollment-agent service (agent-service source). "
+                        + "Keycloak POSTs a CSR and receives an AD CS-issued certificate; the private key "
+                        + "never leaves Keycloak.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .add()
+                .property()
+                .name("kerberosAgentClientCert")
+                .label("Enrollment agent client certificate")
+                .helpText("PEM client certificate Keycloak presents to the agent service for mutual TLS.")
+                .type(ProviderConfigProperty.TEXT_TYPE)
+                .add()
+                .property()
+                .name("kerberosAgentClientKey")
+                .label("Enrollment agent client key")
+                .helpText("PEM private key for the mutual-TLS client certificate (unencrypted; a "
+                        + "${vault.key} reference works too). This authenticates Keycloak to the agent "
+                        + "and is not a CA key, but keep it protected.")
+                .type(ProviderConfigProperty.TEXT_TYPE)
+                .secret(true)
+                .add()
+                .property()
+                .name("kerberosAgentServerCa")
+                .label("Enrollment agent server CA")
+                .helpText("PEM CA bundle used to verify the agent service's own TLS certificate. Leave "
+                        + "empty to use the JVM default trust store; pinning a private CA here is safer.")
+                .type(ProviderConfigProperty.TEXT_TYPE)
                 .add()
                 .property()
                 .name("kerberosAsRepKeyMode")
