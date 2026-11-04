@@ -497,7 +497,10 @@ public class PSSOAuthenticator  implements Authenticator {
                                     offlineSession.setLastSessionRefresh(now);
                                 }
                                 authSession.setAuthNote(AuthenticationManager.FORCED_REAUTHENTICATION, "false");
-                                authSession.setAuthNote(AuthenticationManager.SSO_AUTH, "true");
+                                // No SSO_AUTH here: the device just answered a reauthentication
+                                // challenge, so this is a fresh authentication. Leaving the note
+                                // off lets Keycloak update AUTH_TIME (auth_time claim) and report
+                                // acr=1, which callers such as /psso/cardenroll rely on.
                                 if (config != null) {
                                     if (config.getConfig().get("add_ms_amr") != null) {
                                         boolean addAmr = Boolean.parseBoolean(config.getConfig().get("add_ms_amr"));
@@ -749,6 +752,12 @@ public class PSSOAuthenticator  implements Authenticator {
         int nowSecs = Time.currentTime();
 
         userSession.setNote("psso.udid", deviceUDID);
+        // A session rebuilt from an offline one is not a new login: keep the
+        // original authentication time rather than claiming one now.
+        String authTime = offlineUserSession.getNote(AuthenticationManager.AUTH_TIME);
+        if (authTime != null) {
+            userSession.setNote(AuthenticationManager.AUTH_TIME, authTime);
+        }
         userSession.setLastSessionRefresh(nowSecs);
         userSession.setState(UserSessionModel.State.LOGGED_IN);
 

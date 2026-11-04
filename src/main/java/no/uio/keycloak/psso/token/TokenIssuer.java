@@ -147,6 +147,12 @@ public class TokenIssuer {
 
         }
         userSession.setNote("psso.udid",deviceUDID);
+        if (!isRefresh) {
+            // The device just authenticated the user. These sessions never pass
+            // through Keycloak's own login completion (SSO_AUTH is set below), so
+            // record the time ourselves; it becomes the auth_time claim.
+            userSession.setNote(AuthenticationManager.AUTH_TIME, String.valueOf(nowSecs));
+        }
         userSession.setLastSessionRefresh(nowSecs);
         userSession.setState(UserSessionModel.State.LOGGED_IN);
 
