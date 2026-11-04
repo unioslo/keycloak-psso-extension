@@ -63,13 +63,18 @@ import org.keycloak.services.managers.AuthenticationManager;
 import org.keycloak.services.ui.extend.UiTabProvider;
 
 import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.Signature;
 import java.security.cert.X509Certificate;
 
 import java.security.interfaces.ECPublicKey;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.*;
@@ -86,6 +91,12 @@ public class PSSOResource {
 
     private final KeycloakSession session;
     static Logger logger = Logger.getLogger(PSSOResource.class);
+
+    // Shared client for the device registration check. HTTP/1.1 for the same reason as in PSSOUtils.
+    private static final HttpClient REGISTRATION_CHECK_CLIENT = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(Duration.ofSeconds(10))
+            .build();
 
     public PSSOResource(KeycloakSession session) {
         this.session = session;
@@ -144,10 +155,7 @@ public class PSSOResource {
             logger.error("No PSSO configuration found for realm: " + realm.getId()+". Consider enabling the Declarative UI feature.");
           //  return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
         }
-
         boolean registrationTokenRequired = pssoConfig != null ? pssoConfig.getConfig().getFirst("requireRegistrationToken").equals("true") : false;
-        String savedRegistrationToken = pssoConfig != null ? pssoConfig.getConfig().getFirst("registrationToken") : "";
-
 
 
         logger.info("Enroll device request. From: " + ip_address+ ", User-Agent: " + userAgent+" Client Request ID: "+clientRequestId);
@@ -164,25 +172,6 @@ public class PSSOResource {
 
         RegistrationMethod registrationMethod = RegistrationMethod.valueOf(registrationMethodRequest);
 
-        if (registrationTokenRequired && (savedRegistrationToken.isEmpty() || registrationToken == null || registrationToken.isEmpty() || !registrationToken.equals(savedRegistrationToken))) {
-            logger.error("Platform SSO: Registration token not saved, is empty or there is a wrong one.");
-            return Response.status(Response.Status.BAD_REQUEST).build();
-        }
-
-        String registeredBy;
-
-        if (registrationTokenRequired) {
-            registeredBy = "registrationToken";
-        } else {
-            try {
-                token = new AccessTokenValidator(session)
-                        .validate(accessToken, "psso");   // expectedClient may be null if you don’t need it
-            } catch (Exception e) {
-                logger.error("Platform SSO: Error validating access token: " + e.getMessage());
-                return Response.status(Response.Status.UNAUTHORIZED).build();
-            }
-            registeredBy = token.getPreferredUsername();
-        }
 
         SecureRandom random = new SecureRandom();
         byte[] keyExchangeKeyBytes = new byte[32];
@@ -203,17 +192,43 @@ public class PSSOResource {
         String serial = deviceAttestationObject.getSerial();
         String deviceUDID = deviceAttestationObject.getDeviceUDid();
         Device existingDevice = null;
+
+        if (registrationTokenRequired) {
+
+            boolean registrationAllowed = checkRegistrationToken(pssoConfig, registrationToken, serial);
+            if (!registrationAllowed) {
+                logger.error("Platform SSO: Registration token not saved, is empty or there is a wrong one.");
+                return Response.status(Response.Status.BAD_REQUEST).build();
+            }
+
+        }
+
+        String registeredBy;
+
+        if (registrationTokenRequired) {
+            registeredBy = "registrationToken";
+        } else {
+            try {
+                token = new AccessTokenValidator(session)
+                        .validate(accessToken, "psso");   // expectedClient may be null if you don’t need it
+            } catch (Exception e) {
+                logger.error("Platform SSO: Error validating access token: " + e.getMessage());
+                return Response.status(Response.Status.UNAUTHORIZED).build();
+            }
+            registeredBy = token.getPreferredUsername();
+        }
+
         try {
             existingDevice = em.createNamedQuery("Device.findByUDID", Device.class)
                     .setParameter("udid", deviceUDID)
                     .getSingleResult();
         } catch (NoResultException e) {
-            logger.error("No existing device found for UDID: " + deviceUDID+". Creating a new one.");
+            logger.error("Platform SSO: No existing device found for UDID: " + deviceUDID+". Creating a new one.");
             // no existing device
         }
 
         if (existingDevice != null) {
-            logger.info("Updating existing device with serial number: " + serial+ ". Registered by user: " + registeredBy);
+            logger.info("Platform PSSO: Updating existing device with serial number: " + serial+ ". Registered by user: " + registeredBy);
             existingDevice.setSigningKey(deviceSigningKey);
             existingDevice.setEncryptionKey(deviceEncryptionKey);
             // Apple sends the same context if re-registering, so we need to keep the old key.
@@ -230,7 +245,7 @@ public class PSSOResource {
             existingDevice.setRegistrationMethod(registrationMethod);
             em.merge(existingDevice);
         } else {
-            logger.info("Registering new device with serial number: " + serial + ". Registered by user: " + registeredBy);
+            logger.info("Platform SSO: Registering new device with serial number: " + serial + ". Registered by user: " + registeredBy);
             Device device = new Device();
             device.setDeviceUDID(deviceUDID);
             device.setSerialNumber(serial);
@@ -250,6 +265,115 @@ public class PSSOResource {
 
 
         return Response.ok(Map.of("status", "OK")).build();
+    }
+
+
+    private boolean checkRegistrationToken(ComponentModel pssoConfig, String registrationToken, String serial) {
+
+        if (pssoConfig == null) {
+            logger.error("Platform SSO: No PSSO configuration found for realm: " + session.getContext().getRealm().getId()+". Consider enabling the Declarative UI feature.");
+            return false;
+        }
+        String savedRegistrationToken =  pssoConfig.getConfig().getFirst("registrationToken");
+        String dummyRegistrationToken =  pssoConfig.getConfig().getFirst("dummyRegistrationToken");
+        String checkRegistrationWithURL = pssoConfig.getConfig().getFirst("checkRegistrationWithURL");
+        if (checkRegistrationWithURL == null || checkRegistrationWithURL.isEmpty()) {
+            // Configs saved before this option existed have no value
+            checkRegistrationWithURL = "NEVER";
+        }
+
+        // Case one: the device sent no registration token
+        if (registrationToken == null || registrationToken.isEmpty()) {
+            logger.error("Platform SSO: Registration token is empty and it is required.");
+            return false;
+        }
+
+        // Case two: the token must match either the real or the dummy registration token
+        boolean matchesSaved = tokenEquals(registrationToken, savedRegistrationToken);
+        boolean matchesDummy = !matchesSaved && tokenEquals(registrationToken, dummyRegistrationToken);
+        if (!matchesSaved && !matchesDummy) {
+            logger.error("Platform SSO: Registration token does not match the configured registration token or dummy token.");
+            return false;
+        }
+
+        // Case three: decide whether the serial number must also be checked against the registration URL
+        boolean mustCheckURL = "ALWAYS".equals(checkRegistrationWithURL)
+                || ("WHEN_DUMMY_RT_IS_USED".equals(checkRegistrationWithURL) && matchesDummy);
+        if (!mustCheckURL) {
+            logger.info("Platform SSO: Registration token accepted (" + (matchesSaved ? "registration" : "dummy") + " token).");
+            return true;
+        }
+
+        return isSerialAllowedByRegistrationURL(pssoConfig, serial);
+    }
+
+    // Constant-time comparison, so the token can't be guessed through response timing
+    private static boolean tokenEquals(String provided, String expected) {
+        if (expected == null || expected.isEmpty()) {
+            return false;
+        }
+        return MessageDigest.isEqual(provided.getBytes(StandardCharsets.UTF_8), expected.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Calls checkRegistrationURL with GET ?serial=<serial> and allows the registration only if the
+     * response status equals allowedRegistrationHTTPReturnCode. Any error denies the registration.
+     */
+    private boolean isSerialAllowedByRegistrationURL(ComponentModel pssoConfig, String serial) {
+        String checkRegistrationURL = pssoConfig.getConfig().getFirst("checkRegistrationURL");
+        String allowedCodeValue = pssoConfig.getConfig().getFirst("allowedRegistrationHTTPReturnCode");
+        String bearerToken = pssoConfig.getConfig().getFirst("authorizationBearerToken");
+
+        if (checkRegistrationURL == null || checkRegistrationURL.isBlank()) {
+            logger.error("Platform SSO: Registration check is enabled, but no registration check URL is configured.");
+            return false;
+        }
+        if (serial == null || serial.isBlank()) {
+            logger.error("Platform SSO: Registration check is enabled, but the device has no serial number.");
+            return false;
+        }
+
+        int allowedCode = 200;
+        if (allowedCodeValue != null && !allowedCodeValue.isBlank()) {
+            try {
+                allowedCode = Integer.parseInt(allowedCodeValue.trim());
+            } catch (NumberFormatException e) {
+                logger.error("Platform SSO: Invalid allowedRegistrationHTTPReturnCode: " + allowedCodeValue);
+                return false;
+            }
+        }
+
+        String url = checkRegistrationURL.trim();
+        url += (url.contains("?") ? "&" : "?") + "serial=" + URLEncoder.encode(serial, StandardCharsets.UTF_8);
+
+        try {
+            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Accept", "application/json")
+                    .timeout(Duration.ofSeconds(10))
+                    .GET();
+            if (bearerToken != null && !bearerToken.isBlank()) {
+                requestBuilder.header("Authorization", "Bearer " + bearerToken.trim());
+            }
+
+            java.net.http.HttpResponse<Void> response = REGISTRATION_CHECK_CLIENT.send(
+                    requestBuilder.build(), java.net.http.HttpResponse.BodyHandlers.discarding());
+
+            boolean allowed = response.statusCode() == allowedCode;
+            logger.info("Platform SSO: Registration check for serial " + serial + " returned HTTP " + response.statusCode()
+                    + ". Registration " + (allowed ? "allowed." : "denied."));
+            return allowed;
+        } catch (IllegalArgumentException e) {
+            logger.error("Platform SSO: Invalid registration check URL: " + checkRegistrationURL);
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Platform SSO: Registration check for serial " + serial + " was interrupted.");
+            return false;
+        } catch (Exception e) {
+            logger.error("Platform SSO: Registration check for serial " + serial + " failed: " + e.getMessage());
+            return false;
+        }
     }
 
 
