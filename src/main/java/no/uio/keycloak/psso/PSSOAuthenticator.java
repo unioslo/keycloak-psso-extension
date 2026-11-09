@@ -269,7 +269,7 @@ public class PSSOAuthenticator  implements Authenticator {
                                 // if re-authenticating in the scope of an organization, an organization must be resolved prior to authenticating the user
                                 context.attempted();
                             } else {
-                                authSession.setAuthNote(AuthenticationManager.SSO_AUTH, "true");
+                                PSSOUtils.markSSOAuthentication(authSession, existingSession.getUser());
 
                                 int now = Time.currentTime();
                                 UserSessionModel offlineSession =  context.getSession().sessions().getOfflineUserSession(realm, sid);
@@ -301,7 +301,7 @@ public class PSSOAuthenticator  implements Authenticator {
                                 String deviceUdid = offlineSession.getNote("psso.udid");
                                 offlineSession.setLastSessionRefresh(now);
                                 UserSessionModel newSession = getNewSession(context,deviceUdid,offlineSession);
-                                authSession.setAuthNote(AuthenticationManager.SSO_AUTH, "true");
+                                PSSOUtils.markSSOAuthentication(authSession, user);
                                 context.setUser(user);
                                 context.attachUserSession(newSession);
 

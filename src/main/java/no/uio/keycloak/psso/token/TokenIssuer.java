@@ -18,6 +18,7 @@
 
 package no.uio.keycloak.psso.token;
 
+import no.uio.keycloak.psso.PSSOUtils;
 import no.uio.keycloak.psso.Device;
 import org.jboss.logging.Logger;
 
@@ -191,7 +192,7 @@ public class TokenIssuer {
         clientSession.setNote(OIDCLoginProtocol.ISSUER, issuerUrl);
         authSession.setClientNote(OIDCLoginProtocol.ISSUER, issuerUrl);
 
-        authSession.setAuthNote(AuthenticationManager.SSO_AUTH, "true");
+        PSSOUtils.markSSOAuthentication(authSession, user);
         authSession.setProtocol("openid-connect");
         Set<ClientScopeModel> scopes = TokenManager.getRequestedClientScopes(
                 session,

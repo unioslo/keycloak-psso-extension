@@ -27,8 +27,12 @@ import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.crypto.SignatureProvider;
 import org.keycloak.crypto.SignatureSignerContext;
 import org.keycloak.jose.jws.JWSBuilder;
+import org.keycloak.authentication.AuthenticatorUtil;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserModel;
+import org.keycloak.services.managers.AuthenticationManager;
+import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.representations.JsonWebToken;
 import org.keycloak.services.Urls;
@@ -176,6 +180,21 @@ public  class PSSOUtils {
                 .sign(signer);
     }
 
-
+    /**
+     * Marks the authentication as single sign-on, in whichever form the running
+     * Keycloak understands. Keycloak 26.8+ expects SSO_AUTH to hold the user's id
+     * and rejects anything else with "Authentication session bound with different
+     * user during re-authentication"; older versions only accept "true".
+     *
+     * Rather than parse version strings, write the new form and ask Keycloak
+     * whether it reads it as SSO. The authenticated user must already be set on
+     * the session, since 26.8+ compares the note against it.
+     */
+    public static void markSSOAuthentication(AuthenticationSessionModel authSession, UserModel user) {
+        authSession.setAuthNote(AuthenticationManager.SSO_AUTH, user.getId());
+        if (!AuthenticatorUtil.isSSOAuthentication(authSession)) {
+            authSession.setAuthNote(AuthenticationManager.SSO_AUTH, "true");
+        }
+    }
 
 }
