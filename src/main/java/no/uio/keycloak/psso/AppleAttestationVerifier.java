@@ -157,7 +157,7 @@ public class AppleAttestationVerifier {
             logger.debug("Nonce hash from certificate: " + Hex.toHexString(nonceInCert));
 
             if (Arrays.equals(nonceInCert, expectedNonceHash)) {
-                logger.info("Platform SSO: ALL CHECKS PASSED – Serial number: " + deviceUDidString + ", Device UDID: " + deviceUDidString + " successfully attested");
+                logger.info("Platform SSO: ALL CHECKS PASSED – Serial number: " + serialString + ", Device UDID: " + deviceUDidString + " successfully attested");
                 this.deviceAttestationObject = deviceAttestationObject;
                 return true;
             } else {

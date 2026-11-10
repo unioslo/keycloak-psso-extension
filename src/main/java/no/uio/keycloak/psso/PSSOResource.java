@@ -155,7 +155,7 @@ public class PSSOResource {
             logger.error("No PSSO configuration found for realm: " + realm.getId()+". Consider enabling the Declarative UI feature.");
           //  return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
         }
-        boolean registrationTokenRequired = pssoConfig != null ? pssoConfig.getConfig().getFirst("requireRegistrationToken").equals("true") : false;
+        boolean registrationTokenRequired = pssoConfig != null && "true".equals(pssoConfig.getConfig().getFirst("requireRegistrationToken"));
 
 
         logger.info("Enroll device request. From: " + ip_address+ ", User-Agent: " + userAgent+" Client Request ID: "+clientRequestId);
@@ -189,25 +189,32 @@ public class PSSOResource {
         AppleAttestationVerifier verifier = new AppleAttestationVerifier(appleRoot);
         boolean isAttested = verifier.verifyAppleAttestation(attestationJsonB64Array, deviceSigningKey, nonce, session, clientRequestId);
         DeviceAttestationObject deviceAttestationObject = verifier.deviceAttestationObject;
+        if (!isAttested || deviceAttestationObject == null) {
+            logger.error("Platform SSO: Device attestation failed. Rejecting device registration. Client Request ID: " + clientRequestId);
+            return Response.status(Response.Status.FORBIDDEN).build();
+        }
         String serial = deviceAttestationObject.getSerial();
         String deviceUDID = deviceAttestationObject.getDeviceUDid();
         Device existingDevice = null;
 
-        if (registrationTokenRequired) {
+        // The MDM admin decides what the app sends: a registration token, a user access token, or both.
+        // Every token that is sent must be valid, and at least one must be present.
+        boolean hasRegistrationToken = registrationToken != null && !registrationToken.isBlank();
+        boolean hasAccessToken = accessToken != null && !accessToken.isBlank();
 
-            boolean registrationAllowed = checkRegistrationToken(pssoConfig, registrationToken, serial);
-            if (!registrationAllowed) {
-                logger.error("Platform SSO: Registration token not saved, is empty or there is a wrong one.");
+        RegistrationTokenType registrationTokenType = RegistrationTokenType.NONE;
+        if (hasRegistrationToken) {
+            registrationTokenType = validateRegistrationToken(pssoConfig, registrationToken);
+            if (registrationTokenType == RegistrationTokenType.INVALID) {
                 return Response.status(Response.Status.BAD_REQUEST).build();
             }
-
+        } else if (registrationTokenRequired) {
+            logger.error("Platform SSO: Registration token is required, but none was sent. Serial: " + serial);
+            return Response.status(Response.Status.BAD_REQUEST).build();
         }
 
-        String registeredBy;
-
-        if (registrationTokenRequired) {
-            registeredBy = "registrationToken";
-        } else {
+        String username = null;
+        if (hasAccessToken) {
             try {
                 token = new AccessTokenValidator(session)
                         .validate(accessToken, "psso");   // expectedClient may be null if you don’t need it
@@ -215,7 +222,26 @@ public class PSSOResource {
                 logger.error("Platform SSO: Error validating access token: " + e.getMessage());
                 return Response.status(Response.Status.UNAUTHORIZED).build();
             }
-            registeredBy = token.getPreferredUsername();
+            username = token.getPreferredUsername();
+        }
+
+        if (registrationTokenType == RegistrationTokenType.NONE && username == null) {
+            logger.error("Platform SSO: Neither a registration token nor an access token was sent. Serial: " + serial);
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+
+        if (mustCheckRegistrationURL(pssoConfig, registrationTokenType)
+                && !isSerialAllowedByRegistrationURL(pssoConfig, serial)) {
+            return Response.status(Response.Status.FORBIDDEN).build();
+        }
+
+        String registeredBy;
+        if (username != null) {
+            registeredBy = username;
+        } else if (registrationTokenType == RegistrationTokenType.DUMMY) {
+            registeredBy = "dummyRegistrationToken";
+        } else {
+            registeredBy = "registrationToken";
         }
 
         try {
@@ -268,43 +294,50 @@ public class PSSOResource {
     }
 
 
-    private boolean checkRegistrationToken(ComponentModel pssoConfig, String registrationToken, String serial) {
+    private enum RegistrationTokenType { NONE, REGISTRATION, DUMMY, INVALID }
 
+    /** Tells whether the sent token is the registration token, the dummy token, or neither. */
+    private RegistrationTokenType validateRegistrationToken(ComponentModel pssoConfig, String registrationToken) {
         if (pssoConfig == null) {
-            logger.error("Platform SSO: No PSSO configuration found for realm: " + session.getContext().getRealm().getId()+". Consider enabling the Declarative UI feature.");
+            logger.error("Platform SSO: A registration token was sent, but no PSSO configuration found for realm: " + session.getContext().getRealm().getId()+". Consider enabling the Declarative UI feature.");
+            return RegistrationTokenType.INVALID;
+        }
+        if (tokenEquals(registrationToken, pssoConfig.getConfig().getFirst("registrationToken"))) {
+            logger.info("Platform SSO: Registration token accepted.");
+            return RegistrationTokenType.REGISTRATION;
+        }
+        if (tokenEquals(registrationToken, pssoConfig.getConfig().getFirst("dummyRegistrationToken"))) {
+            logger.info("Platform SSO: Dummy registration token accepted.");
+            return RegistrationTokenType.DUMMY;
+        }
+        logger.error("Platform SSO: Registration token does not match the configured registration token or dummy token.");
+        return RegistrationTokenType.INVALID;
+    }
+
+    /**
+     * Reads checkRegistrationWithURL (multivalued). ALWAYS wins; NEVER or no value means no check.
+     * Old configs hold a single value (NEVER, WHEN_DUMMY_RT_IS_USED or ALWAYS), which reads the same way.
+     */
+    private static boolean mustCheckRegistrationURL(ComponentModel pssoConfig, RegistrationTokenType registrationTokenType) {
+        if (pssoConfig == null) {
             return false;
         }
-        String savedRegistrationToken =  pssoConfig.getConfig().getFirst("registrationToken");
-        String dummyRegistrationToken =  pssoConfig.getConfig().getFirst("dummyRegistrationToken");
-        String checkRegistrationWithURL = pssoConfig.getConfig().getFirst("checkRegistrationWithURL");
-        if (checkRegistrationWithURL == null || checkRegistrationWithURL.isEmpty()) {
-            // Configs saved before this option existed have no value
-            checkRegistrationWithURL = "NEVER";
+        Set<String> conditions = new HashSet<>();
+        List<String> values = pssoConfig.getConfig().get("checkRegistrationWithURL");
+        if (values != null) {
+            for (String value : values) {
+                if (value == null) continue;
+                // Components store one entry per value, but accept the "##"-joined form too
+                for (String part : value.split("##")) {
+                    if (!part.isBlank()) conditions.add(part.trim());
+                }
+            }
         }
-
-        // Case one: the device sent no registration token
-        if (registrationToken == null || registrationToken.isEmpty()) {
-            logger.error("Platform SSO: Registration token is empty and it is required.");
-            return false;
-        }
-
-        // Case two: the token must match either the real or the dummy registration token
-        boolean matchesSaved = tokenEquals(registrationToken, savedRegistrationToken);
-        boolean matchesDummy = !matchesSaved && tokenEquals(registrationToken, dummyRegistrationToken);
-        if (!matchesSaved && !matchesDummy) {
-            logger.error("Platform SSO: Registration token does not match the configured registration token or dummy token.");
-            return false;
-        }
-
-        // Case three: decide whether the serial number must also be checked against the registration URL
-        boolean mustCheckURL = "ALWAYS".equals(checkRegistrationWithURL)
-                || ("WHEN_DUMMY_RT_IS_USED".equals(checkRegistrationWithURL) && matchesDummy);
-        if (!mustCheckURL) {
-            logger.info("Platform SSO: Registration token accepted (" + (matchesSaved ? "registration" : "dummy") + " token).");
+        if (conditions.contains("ALWAYS")) {
             return true;
         }
-
-        return isSerialAllowedByRegistrationURL(pssoConfig, serial);
+        return (conditions.contains("WHEN_DUMMY_RT_IS_USED") && registrationTokenType == RegistrationTokenType.DUMMY)
+                || (conditions.contains("WHEN_NO_RT_IS_USED") && registrationTokenType == RegistrationTokenType.NONE);
     }
 
     // Constant-time comparison, so the token can't be guessed through response timing
@@ -400,6 +433,10 @@ public class PSSOResource {
         AppleAttestationVerifier verifier = new AppleAttestationVerifier(appleRoot);
         boolean isAttested = verifier.verifyAppleAttestation(attestationJsonB64Array, userKey, nonce, session, clientRequestId);
         DeviceAttestationObject deviceAttestationObject = verifier.deviceAttestationObject;
+        if (!isAttested || deviceAttestationObject == null) {
+            logger.error("Platform SSO: User key attestation failed. Rejecting user registration. Client Request ID: " + clientRequestId);
+            return Response.status(Response.Status.FORBIDDEN).build();
+        }
 
         AccessToken token;
         try {
