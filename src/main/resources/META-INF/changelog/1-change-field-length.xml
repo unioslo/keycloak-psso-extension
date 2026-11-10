@@ -21,10 +21,13 @@
     </changeSet>
 
 
-    <!-- MariaDB: increase VARCHAR size -->
+    <!-- MariaDB and MySQL: increase VARCHAR size -->
     <changeSet id="7-key-id-to-varchar-512-mariadb" author="francis">
         <preConditions onFail="MARK_RAN">
-            <dbms type="mariadb"/>
+            <or>
+                <dbms type="mysql"/>
+                <dbms type="mariadb"/>
+            </or>
         </preConditions>
 
         <sql>

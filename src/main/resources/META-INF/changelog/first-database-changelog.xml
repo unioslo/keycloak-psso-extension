@@ -80,11 +80,14 @@
 
 
     <!-- =======================
-         MariaDB version
+         MariaDB and MySQL version
     ========================== -->
     <changeSet id="1-create-psso-device-table-mariadb" author="francis">
         <preConditions onFail="MARK_RAN">
-            <dbms type="mariadb"/>
+            <or>
+                <dbms type="mysql"/>
+                <dbms type="mariadb"/>
+            </or>
         </preConditions>
 
         <createTable tableName="psso_device">
