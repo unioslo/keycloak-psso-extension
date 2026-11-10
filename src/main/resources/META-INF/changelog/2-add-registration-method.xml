@@ -7,7 +7,14 @@
           http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
 
     <changeSet id="8-add-registration-method" author="francis">
-
+        <preConditions onFail="MARK_RAN">
+            <or>
+                <dbms type="mysql"/>
+                <dbms type="mariadb"/>
+                <dbms type="postgresql"/>
+            </or>
+        </preConditions>
+        
         <addColumn tableName="psso_device">
             <column name="registration_method"
                     type="VARCHAR(32)"
